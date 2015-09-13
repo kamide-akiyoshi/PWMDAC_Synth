@@ -15,12 +15,13 @@ PWMDACSynth	KEYWORD1
 # Methods and Functions (KEYWORD2)
 #######################################
 
-setup		KEYWORD2
+setup	KEYWORD2
 nextPulseWidth	KEYWORD2
+updatePulseWidth	KEYWORD2
 updateEnvelopeStatus	KEYWORD2
 soundOff	KEYWORD2
-noteOff		KEYWORD2
-noteOn		KEYWORD2
+noteOff	KEYWORD2
+noteOn	KEYWORD2
 pitchBend	KEYWORD2
 controlChange	KEYWORD2
 getPitchRate	KEYWORD2
@@ -29,11 +30,11 @@ setPitchBend	KEYWORD2
 getModulation	KEYWORD2
 setEnvelope	KEYWORD2
 getEnvelope	KEYWORD2
-setWave		KEYWORD2
-getWave		KEYWORD2
+setWave	KEYWORD2
+getWave	KEYWORD2
 musicalMod12	KEYWORD2
 musicalMod7	KEYWORD2
-log2		KEYWORD2
+log2	KEYWORD2
 musicalConstrain12	KEYWORD2
 
 #######################################
@@ -41,5 +42,5 @@ musicalConstrain12	KEYWORD2
 #######################################
 
 PWM_SYNTH	LITERAL1
-F_NOTE_A	LITERAL1
+NOTE_A_FREQUENCY	LITERAL1
 PWMDAC_SYNTH_POLYPHONY	LITERAL1

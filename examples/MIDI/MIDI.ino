@@ -3,6 +3,7 @@
 //	using MIDI library + PWM DAC Synth library
 //
 #include <MIDI.h>
+MIDI_CREATE_DEFAULT_INSTANCE();
 
 #define MIDI_ENABLE_PIN     2
 

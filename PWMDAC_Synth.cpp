@@ -1,83 +1,57 @@
 //
-// PWM DAC Synthesizer ver.20130327
+// PWM DAC Synthesizer ver.20150913
 //
 #include "PWMDAC_Synth.h"
 
 PWMDACSynth PWM_SYNTH = PWMDACSynth();
 
+// Phase speed table to determine tone pitch
 //
-// http://en.wikipedia.org/wiki/MIDI_Tuning_Standard
-// MIDI note # d = 0..127
-//
-//    fn(d) = 440 Hz * 2^( (d - 69) / 12 )
+// [Phase-correct PWM dual-slope]
+//    TCNTn = 00(BOTTOM) 01 02 03 ... FD FE FF(TOP) FE FD ... 03 02 01
+//    -> 510 values (NOT 512)
 //
 // ISR()-call interval = 510 / 16MHz = 31.875us
+// 
+// [MIDI Tuning Standard]
+// http://en.wikipedia.org/wiki/MIDI_Tuning_Standard
+//    fn(d) = 440 Hz * 2^( (d - 69) / 12 )  MIDI note # d = 0..127
 //
-//   [Phase-correct PWM dual-slope]
-//     TCNTn = 00(BOTTOM) 01 02 03 ... FD FE FF(TOP) FE FD ... 03 02 01
-//     -> 510 values (NOT 512)
-//
-#define P(x) (pow( 2, (double)(x)/12 + 8 * sizeof(unsigned long) ) * F_NOTE_A * 510 / F_CPU)
-PROGMEM const unsigned long pitchtable[] = { // has values for MIDI note number 0..127
-P(-69),	P(-68),	P(-67),	P(-66),	P(-65),	P(-64),	P(-63),	P(-62),
-P(-61),	P(-60),	P(-59),	P(-58),	P(-57),	P(-56),	P(-55),	P(-54),
-P(-53),	P(-52),	P(-51),	P(-50),	P(-49),	P(-48),	P(-47),	P(-46),
-P(-45),	P(-44),	P(-43),	P(-42),	P(-41),	P(-40),	P(-39),	P(-38),
-P(-37),	P(-36),	P(-35),	P(-34),	P(-33),	P(-32),	P(-31),	P(-30),
-P(-29),	P(-28),	P(-27),	P(-26),	P(-25),	P(-24),	P(-23),	P(-22),
-P(-21),	P(-20),	P(-19),	P(-18),	P(-17),	P(-16),	P(-15),	P(-14),
-P(-13),	P(-12),	P(-11),	P(-10),	P(-9),	P(-8),	P(-7),	P(-6),
-
-P(-5),	P(-4),	P(-3),	P(-2),	P(-1),	P(0),	P(1),	P(2),
-P(3),	P(4),	P(5),	P(6),	P(7),	P(8),	P(9),	P(10),
-P(11),	P(12),	P(13),	P(14),	P(15),	P(16),	P(17),	P(18),
-P(19),	P(20),	P(21),	P(22),	P(23),	P(24),	P(25),	P(26),
-P(27),	P(28),	P(29),	P(30),	P(31),	P(32),	P(33),	P(34),
-P(35),	P(36),	P(37),	P(38),	P(39),	P(40),	P(41),	P(42),
-P(43),	P(44),	P(45),	P(46),	P(47),	P(48),	P(49),	P(50),
-P(51),	P(52),	P(53),	P(54),	P(55),	P(56),	P(57),	P(58),
-};
+#define P(note_number) (\
+  pow( 2, (double)(note_number - 69)/12 + sizeof(unsigned long) * 8 ) \
+  * NOTE_A_FREQUENCY * 510 / F_CPU \
+)
+#define P2(x)   P(x), P(x + 1)
+#define P4(x)   P2(x), P2(x + 2)
+#define P8(x)   P4(x), P4(x + 4)
+#define P16(x)  P8(x), P8(x + 8)
+#define P32(x)  P16(x), P16(x + 16)
+#define P64(x)  P32(x), P32(x + 32)
+#define P128(x) P64(x), P64(x + 64)
+PROGMEM const unsigned long phase_speed_table[] = { P128(0) };
+#define PHASE_SPEED_OF(note) pgm_read_dword(phase_speed_table + note)
+#undef P128
+#undef P64
+#undef P32
+#undef P16
+#undef P8
+#undef P4
+#undef P2
 #undef P
 
-const AdsrHandler VoiceStatus::ADSR_handlers[5] = {
-  NULL, // voice OFF
-  &VoiceStatus::tickRelease,
-  NULL, // Sustain
-  &VoiceStatus::tickDecay,
-  &VoiceStatus::tickAttack,
-};
+MidiChannel PWMDACSynth::channels[16];
+VoiceStatus PWMDACSynth::voices[PWMDAC_SYNTH_POLYPHONY];
+
 void VoiceStatus::attack(byte note) {
-  this->note = note;
   MidiChannel *channel_p = PWM_SYNTH.getChannel(channel);
+  this->note = note;
   env_param_p = &(channel_p->env_param);
   wavetable = channel_p->wavetable;
-  dphase_original = pgm_read_dword( pitchtable + note );
-  setPitchRate( channel_p->getPitchRate() );
+  dphase_original = PHASE_SPEED_OF(note);
+  setPitchRate(channel_p->getPitchRate());
   ADSR_countdown = 4;
 }
-void VoiceStatus::tickAttack() {
-  long next_volume16 = volume16;
-  next_volume16 += env_param_p->attack_speed;
-  if( next_volume16 > 0xFFFF ) {
-    ADSR_countdown = 3; setVolume(0xFFFF);
-  }
-  else setVolume(next_volume16);
-}
-void VoiceStatus::tickDecay() {
-  setVolume( volume16 - (volume16 >> env_param_p->decay_time) );
-  if( volume16 <= env_param_p->sustain_level )
-    ADSR_countdown = 2;
-}
-void VoiceStatus::tickRelease() {
-  unsigned int dv = volume16 >> env_param_p->release_time;
-  if( dv < 0x0020 ) dv = 0x0020;
-  long next_volume16 = volume16;
-  next_volume16 -= dv;
-  if( next_volume16 < 0x0100 )
-    soundOff();
-  else
-    setVolume((unsigned int)next_volume16);
-}
+
 void VoiceStatus::updateEnvelopeStatus(int modulation_offset) {
   byte modulation = PWM_SYNTH.getChannel(channel)->modulation;
   if( modulation > 0x10 )
@@ -86,30 +60,13 @@ void VoiceStatus::updateEnvelopeStatus(int modulation_offset) {
     );
   else
     dphase = dphase_pitch_bend;
-  AdsrHandler handler = ADSR_handlers[ADSR_countdown];
-  if( handler != NULL ) (this->*handler)();
+  switch(ADSR_countdown) {
+    case 1: tickRelease(); break;
+    case 3: tickDecay();   break;
+    case 4: tickAttack();  break;
+  }
 }
 
-MidiChannel PWMDACSynth::channels[16];
-VoiceStatus PWMDACSynth::voices[PWMDAC_SYNTH_POLYPHONY];
-PWMDACSynth::PWMDACSynth() {
-  char i;
-  for( i=0; i<NumberOf(channels); i++ ) {
-    channels[i] = MidiChannel();
-    channels[i].wavetable = sineWavetable;
-  }
-  for( i=0; i<PWMDAC_SYNTH_POLYPHONY; i++ )
-    voices[i] = VoiceStatus();
-}
-void PWMDACSynth::pitchBend(byte channel, int bend) {
-  MidiChannel *cp = getChannel(channel);
-  cp->setPitchBend(bend);
-  VoiceStatus *vsp = voices;
-  do {
-    if(vsp->isVoiceOn(channel))
-      vsp->setPitchRate(cp->getPitchRate());
-  } while( ++vsp <= voices + (NumberOf(voices)-1) );
-}
 byte PWMDACSynth::musicalMod7(char x) {
   while( x & 0xF8 ) x = (x >> 3) + (x & 7);
   if(x==7) return 0;
