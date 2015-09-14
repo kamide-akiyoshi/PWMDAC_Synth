@@ -1,5 +1,5 @@
 //
-// PWM DAC Synthesizer ver.20150913
+// PWM DAC Synthesizer ver.20150914
 //
 #include "PWMDAC_Synth.h"
 
@@ -28,8 +28,15 @@ PWMDACSynth PWM_SYNTH = PWMDACSynth();
 #define P32(x)  P16(x), P16(x + 16)
 #define P64(x)  P32(x), P32(x + 32)
 #define P128(x) P64(x), P64(x + 64)
-PROGMEM const unsigned long phase_speed_table[] = { P128(0) };
-#define PHASE_SPEED_OF(note) pgm_read_dword(phase_speed_table + note)
+void VoiceStatus::attack(byte note) {
+  static PROGMEM const unsigned long phase_speed_table[] = { P128(0) };
+  MidiChannel *channel_p = PWM_SYNTH.getChannel(channel);
+  env_param_p = &(channel_p->env_param);
+  wavetable = channel_p->wavetable;
+  dphase_original = pgm_read_dword(phase_speed_table + (this->note = note));
+  setPitchRate(channel_p->getPitchRate());
+  ADSR_countdown = 4;
+}
 #undef P128
 #undef P64
 #undef P32
@@ -39,33 +46,15 @@ PROGMEM const unsigned long phase_speed_table[] = { P128(0) };
 #undef P2
 #undef P
 
+void VoiceStatus::updateModulationStatus(int modulation_offset) {
+  byte modulation = PWM_SYNTH.getChannel(channel)->modulation;
+  if( modulation <= 0x10 ) { dphase = dphase_pitch_bend; return; }
+  long dphase_offset = (dphase_pitch_bend >> 19) * modulation * modulation_offset;
+  dphase = dphase_pitch_bend + dphase_offset;
+}
+
 MidiChannel PWMDACSynth::channels[16];
 VoiceStatus PWMDACSynth::voices[PWMDAC_SYNTH_POLYPHONY];
-
-void VoiceStatus::attack(byte note) {
-  MidiChannel *channel_p = PWM_SYNTH.getChannel(channel);
-  this->note = note;
-  env_param_p = &(channel_p->env_param);
-  wavetable = channel_p->wavetable;
-  dphase_original = PHASE_SPEED_OF(note);
-  setPitchRate(channel_p->getPitchRate());
-  ADSR_countdown = 4;
-}
-
-void VoiceStatus::updateEnvelopeStatus(int modulation_offset) {
-  byte modulation = PWM_SYNTH.getChannel(channel)->modulation;
-  if( modulation > 0x10 )
-    dphase = dphase_pitch_bend + (long)(
-      (dphase_pitch_bend >> 19) * modulation * modulation_offset
-    );
-  else
-    dphase = dphase_pitch_bend;
-  switch(ADSR_countdown) {
-    case 1: tickRelease(); break;
-    case 3: tickDecay();   break;
-    case 4: tickAttack();  break;
-  }
-}
 
 byte PWMDACSynth::musicalMod7(char x) {
   while( x & 0xF8 ) x = (x >> 3) + (x & 7);

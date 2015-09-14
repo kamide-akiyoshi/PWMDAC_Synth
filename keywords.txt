@@ -16,22 +16,14 @@ PWMDACSynth	KEYWORD1
 #######################################
 
 setup	KEYWORD2
-nextPulseWidth	KEYWORD2
-updatePulseWidth	KEYWORD2
-updateEnvelopeStatus	KEYWORD2
-soundOff	KEYWORD2
+update	KEYWORD2
 noteOff	KEYWORD2
 noteOn	KEYWORD2
 pitchBend	KEYWORD2
 controlChange	KEYWORD2
-getPitchRate	KEYWORD2
-getPitchBend	KEYWORD2
-setPitchBend	KEYWORD2
-getModulation	KEYWORD2
+getChannel	KEYWORD2
 setEnvelope	KEYWORD2
-getEnvelope	KEYWORD2
 setWave	KEYWORD2
-getWave	KEYWORD2
 musicalMod12	KEYWORD2
 musicalMod7	KEYWORD2
 log2	KEYWORD2
