@@ -9,6 +9,7 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 
 #define PWMDAC_OUTPUT_PIN   3
 #include <PWMDAC_Synth.h>
+PWMDAC_CREATE_DEFAULT_INSTANCE();
 
 void HandleNoteOn(byte channel, byte pitch, byte velocity) { 
   if( velocity == 0 ) {

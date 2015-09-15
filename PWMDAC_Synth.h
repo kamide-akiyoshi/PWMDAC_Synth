@@ -1,5 +1,5 @@
 //
-// Header for PWM DAC Synthesizer ver.20150914
+// Header for PWM DAC Synthesizer ver.20150915
 //
 // Usage:
 //    #define PWMDAC_OUTPUT_PIN << Your using pin# 3/9/10/11 >>
@@ -16,13 +16,7 @@
 #define cbi16(sfr, bit) (_SFR_WORD(sfr) &= ~_BV(bit))
 #define sbi16(sfr, bit) (_SFR_WORD(sfr) |= _BV(bit))
 
-#ifndef PWMDAC_SYNTH_POLYPHONY
-#define PWMDAC_SYNTH_POLYPHONY  6
-#endif
-
-#ifndef NOTE_A_FREQUENCY
-#define NOTE_A_FREQUENCY 440 // [Hz]
-#endif
+#define PWMDAC_CREATE_DEFAULT_INSTANCE PWMDACSynth PWM_SYNTH = PWMDACSynth
 
 // PWM output pin:
 //
@@ -44,6 +38,24 @@
 #endif
 #endif // PWMDAC_OUTPUT_PIN
 
+// Phase speed table to determine tone pitch
+//
+// [Phase-correct PWM dual-slope]
+//    TCNTn = 00(BOTTOM) 01 02 03 ... FD FE FF(TOP) FE FD ... 03 02 01
+//    -> 510 values (NOT 512)
+//
+// ISR()-call interval = 510 / 16MHz = 31.875us
+// 
+// [MIDI Tuning Standard]
+// http://en.wikipedia.org/wiki/MIDI_Tuning_Standard
+//    fn(d) = 440 Hz * 2^( (d - 69) / 12 )  MIDI note # d = 0..127
+//
+#define NOTE_A_FREQUENCY 440 // [Hz]
+#define PHASE_SPEED_OF(note_number) (\
+  pow( 2, (double)(note_number - 69)/12 + sizeof(unsigned long) * 8 ) \
+  * NOTE_A_FREQUENCY * 510 / F_CPU \
+)
+
 typedef struct _EnvelopeParam {
   unsigned int attack_speed;
   byte decay_time; // 0..15
@@ -55,12 +67,38 @@ class VoiceStatus {
   public:
     VoiceStatus() { soundOff(); }
     void newChannel(byte channel) { soundOff(); this->channel = channel; }
+    byte getChannel() const { return channel; }
     void soundOff() {
       ADSR_countdown = 0; volume8 = 0; volume16 = 0;
       phase = dphase = dphase_pitch_bend = dphase_original = 0L;
     }
     void release() { ADSR_countdown = 1; }
-    void attack(byte);
+    void attack(
+      PROGMEM const byte *wavetable,
+      EnvelopeParam *env_param_p,
+      double pitch_rate, byte note
+    ) {
+#define P2(x)   PHASE_SPEED_OF(x), PHASE_SPEED_OF(x + 1)
+#define P4(x)   P2(x),  P2(x + 2)
+#define P8(x)   P4(x),  P4(x + 4)
+#define P16(x)  P8(x),  P8(x + 8)
+#define P32(x)  P16(x), P16(x + 16)
+#define P64(x)  P32(x), P32(x + 32)
+#define P128(x) P64(x), P64(x + 64)
+      static PROGMEM const unsigned long phase_speed_table[] = { P128(0) };
+      this->wavetable = wavetable;
+      this->env_param_p = env_param_p;
+      dphase_original = pgm_read_dword(phase_speed_table + (this->note = note));
+      setPitchRate(pitch_rate);
+      ADSR_countdown = 4;
+#undef P128
+#undef P64
+#undef P32
+#undef P16
+#undef P8
+#undef P4
+#undef P2
+    }
     unsigned int getPriority() {
       unsigned int p = ADSR_countdown;
       return (p << 8) + volume8;
@@ -82,8 +120,8 @@ class VoiceStatus {
     unsigned int nextPulseWidth() {
       return volume8 * pgm_read_byte(wavetable + (byte)((phase += dphase) >> 24));
     }
-    void update(int modulation_offset) {
-      updateModulationStatus(modulation_offset);
+    void update(byte modulation, int modulation_offset) {
+      updateModulationStatus(modulation, modulation_offset);
       updateEnvelopeStatus();
     }
     void setPitchRate(double rate) {
@@ -124,7 +162,11 @@ class VoiceStatus {
       if( next_volume16 < 0x0100 ) soundOff();
       else setVolume((unsigned int)next_volume16);
     }
-    void updateModulationStatus(int);
+    void updateModulationStatus(byte modulation, char modulation_offset) {
+      if( modulation <= 0x10 ) { dphase = dphase_pitch_bend; return; }
+      long dphase_offset = (dphase_pitch_bend >> 19) * modulation * (int)modulation_offset;
+      dphase = dphase_pitch_bend + dphase_offset;
+    }
     void updateEnvelopeStatus() {
       switch(ADSR_countdown) {
         case 1: tickRelease(); break;
@@ -139,24 +181,20 @@ class MidiChannel {
     byte modulation;  // 0 ... 127 (unsigned 7 bit - MSB only)
     PROGMEM const byte *wavetable;
     EnvelopeParam env_param;
-    MidiChannel() {
-      modulation = 0;
-      pitch_bend_sensitivity = 2;
-      coarse_pitch_bend = 0;
-      pitch_rate = 1.0;
-      env_param.attack_speed = 0x8000;
-      env_param.decay_time = 7;
-      env_param.sustain_level = 0x8000;
-      env_param.release_time = 7;
-      rpns[LSB] = rpns[MSB] = 0xFF;
+    MidiChannel(PROGMEM const byte wavetable[]) {
+      initialize();
+      this->wavetable = wavetable;
     }
     double getPitchRate() const { return pitch_rate; }
-    void setPitchBend(byte channel, const VoiceStatus *voices, int bend) {
+    void setPitchBend(int bend) {
       // Signed 14bit value : -8192(lowest) .. 0(center) .. +8191(highest)
       char coarse = bend >> PITCH_BEND_COARSENESS;
       if( coarse_pitch_bend == coarse ) return;
       coarse_pitch_bend = coarse;
-      updatePitchRate(channel, voices);
+      pitch_rate = pow( 2,
+        (float)((int)coarse_pitch_bend * pitch_bend_sensitivity) /
+        (float)((8191 >> PITCH_BEND_COARSENESS) * 12)
+      );
     }
     void controlChange(byte number, byte value) {
       switch(number) {
@@ -177,33 +215,27 @@ class MidiChannel {
     byte pitch_bend_sensitivity;  // +/- max semitones 0 .. 24(= 2 octaves)
     double pitch_rate; // positive value only: low .. 1.0(center) .. high
     char coarse_pitch_bend;
-    void updatePitchRate(byte channel, const VoiceStatus *voices) {
-      pitch_rate = pow( 2,
-        (float)((int)coarse_pitch_bend * pitch_bend_sensitivity) /
-        (float)((8191 >> PITCH_BEND_COARSENESS) * 12)
-      );
-      VoiceStatus *vsp = (VoiceStatus *)voices;
-      do {
-        if(vsp->isVoiceOn(channel)) vsp->setPitchRate(pitch_rate);
-      } while( ++vsp <= voices + (PWMDAC_SYNTH_POLYPHONY - 1) );
+    void initialize() {
+      modulation = 0;
+      pitch_bend_sensitivity = 2;
+      coarse_pitch_bend = 0;
+      pitch_rate = 1.0;
+      env_param.attack_speed = 0x8000;
+      env_param.decay_time = 7;
+      env_param.sustain_level = 0x8000;
+      env_param.release_time = 7;
+      rpns[LSB] = rpns[MSB] = 0xFF;
     }
 };
 
 class PWMDACSynth {
   public:
+    static const byte POLYPHONY = 6;
     static PROGMEM const byte sineWavetable[];
     static PROGMEM const byte squareWavetable[];
     static PROGMEM const byte triangleWavetable[];
     static PROGMEM const byte sawtoothWavetable[];
     static PROGMEM const byte shepardToneSineWavetable[];
-    PWMDACSynth() {
-      char i;
-      for( i=0; i<NumberOf(channels); i++ ) {
-        (channels[i] = MidiChannel()).wavetable = sineWavetable;
-      }
-      for( i=0; i<PWMDAC_SYNTH_POLYPHONY; i++ )
-        voices[i] = VoiceStatus();
-    }
     static void setup() { // must be called from setup() once
 #ifdef PWMDAC_OUTPUT_PIN
       pinMode(PWMDAC_OUTPUT_PIN,OUTPUT);
@@ -255,8 +287,8 @@ class PWMDACSynth {
       int modulation_offset = pgm_read_byte(maxVolumeSineWavetable + (++modulation_phase)) - 0x7F;
       VoiceStatus *vsp = voices;
       do {
-        vsp->update(modulation_offset);
-      } while( ++vsp <= voices + (PWMDAC_SYNTH_POLYPHONY - 1) );
+        vsp->update(getChannel(vsp->getChannel())->modulation, modulation_offset);
+      } while( ++vsp <= voices + (POLYPHONY - 1) );
     }
     static void updateEnvelopeStatus() { return update(); }
     static void updatePulseWidth() { // must be called from ISR() repeatedly
@@ -283,10 +315,16 @@ class PWMDACSynth {
     static void noteOn(byte channel, byte pitch, byte velocity) {
       VoiceStatus *vsp = getVoiceStatus(channel, pitch);
       if( vsp == NULL ) (vsp = getLowestPriorityVoiceStatus())->newChannel(channel);
-      vsp->attack(pitch);
+      MidiChannel *channel_p = getChannel(channel);
+      vsp->attack(channel_p->wavetable, &(channel_p->env_param), channel_p->getPitchRate(), pitch);
     }
     static void pitchBend(byte channel, int bend) {
-      getChannel(channel)->setPitchBend(channel, voices, bend);
+      MidiChannel *channel_p = getChannel(channel);
+      channel_p->setPitchBend(bend);
+      VoiceStatus *vsp = voices;
+      do {
+        if(vsp->isVoiceOn(channel)) vsp->setPitchRate(channel_p->getPitchRate());
+      } while( ++vsp <= voices + (POLYPHONY - 1) );
     }
     static void controlChange(byte channel, byte number, byte value) {
       getChannel(channel)->controlChange(number, value);
@@ -322,11 +360,11 @@ class PWMDACSynth {
     }
   protected:
     static MidiChannel channels[16];
-    static VoiceStatus voices[PWMDAC_SYNTH_POLYPHONY];
+    static VoiceStatus voices[POLYPHONY];
     static PROGMEM const byte maxVolumeSineWavetable[];
     static VoiceStatus *getVoiceStatus(byte channel, byte note) {
       VoiceStatus *vsp = voices;
-      for( byte i=0; i<PWMDAC_SYNTH_POLYPHONY; i++, vsp++ )
+      for( byte i=0; i<POLYPHONY; i++, vsp++ )
         if( vsp->isNoteOn(channel,note) ) return vsp;
       return NULL;
     }
@@ -334,7 +372,7 @@ class PWMDACSynth {
       unsigned int priority;
       unsigned int lowest_priority = 0xFFFF;
       byte i_lowest_priority = 0;
-      for( byte i=0; i<PWMDAC_SYNTH_POLYPHONY; i++ ) {
+      for( byte i=0; i<POLYPHONY; i++ ) {
         if( (priority = voices[i].getPriority()) < lowest_priority ) {
           lowest_priority = priority;
           i_lowest_priority = i;
@@ -347,12 +385,10 @@ class PWMDACSynth {
       VoiceStatus *vsp = voices;
       do {
         pulse_width += vsp->nextPulseWidth();
-      } while( ++vsp <= voices + (PWMDAC_SYNTH_POLYPHONY - 1) );
+      } while( ++vsp <= voices + (POLYPHONY - 1) );
       return pulse_width >> 8;
     }
 };
-
-extern PWMDACSynth PWM_SYNTH;
 
 // Interrupt Service Routine
 #ifdef PWMDAC_USE_TIMER1

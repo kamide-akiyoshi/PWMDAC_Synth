@@ -1,60 +1,10 @@
 //
-// PWM DAC Synthesizer ver.20150914
+// PWM DAC Synthesizer ver.20150915
 //
 #include "PWMDAC_Synth.h"
 
-PWMDACSynth PWM_SYNTH = PWMDACSynth();
-
-// Phase speed table to determine tone pitch
-//
-// [Phase-correct PWM dual-slope]
-//    TCNTn = 00(BOTTOM) 01 02 03 ... FD FE FF(TOP) FE FD ... 03 02 01
-//    -> 510 values (NOT 512)
-//
-// ISR()-call interval = 510 / 16MHz = 31.875us
-// 
-// [MIDI Tuning Standard]
-// http://en.wikipedia.org/wiki/MIDI_Tuning_Standard
-//    fn(d) = 440 Hz * 2^( (d - 69) / 12 )  MIDI note # d = 0..127
-//
-#define P(note_number) (\
-  pow( 2, (double)(note_number - 69)/12 + sizeof(unsigned long) * 8 ) \
-  * NOTE_A_FREQUENCY * 510 / F_CPU \
-)
-#define P2(x)   P(x), P(x + 1)
-#define P4(x)   P2(x), P2(x + 2)
-#define P8(x)   P4(x), P4(x + 4)
-#define P16(x)  P8(x), P8(x + 8)
-#define P32(x)  P16(x), P16(x + 16)
-#define P64(x)  P32(x), P32(x + 32)
-#define P128(x) P64(x), P64(x + 64)
-void VoiceStatus::attack(byte note) {
-  static PROGMEM const unsigned long phase_speed_table[] = { P128(0) };
-  MidiChannel *channel_p = PWM_SYNTH.getChannel(channel);
-  env_param_p = &(channel_p->env_param);
-  wavetable = channel_p->wavetable;
-  dphase_original = pgm_read_dword(phase_speed_table + (this->note = note));
-  setPitchRate(channel_p->getPitchRate());
-  ADSR_countdown = 4;
-}
-#undef P128
-#undef P64
-#undef P32
-#undef P16
-#undef P8
-#undef P4
-#undef P2
-#undef P
-
-void VoiceStatus::updateModulationStatus(int modulation_offset) {
-  byte modulation = PWM_SYNTH.getChannel(channel)->modulation;
-  if( modulation <= 0x10 ) { dphase = dphase_pitch_bend; return; }
-  long dphase_offset = (dphase_pitch_bend >> 19) * modulation * modulation_offset;
-  dphase = dphase_pitch_bend + dphase_offset;
-}
-
-MidiChannel PWMDACSynth::channels[16];
-VoiceStatus PWMDACSynth::voices[PWMDAC_SYNTH_POLYPHONY];
+MidiChannel PWMDACSynth::channels[16] = MidiChannel(PWMDACSynth::sineWavetable);
+VoiceStatus PWMDACSynth::voices[POLYPHONY];
 
 byte PWMDACSynth::musicalMod7(char x) {
   while( x & 0xF8 ) x = (x >> 3) + (x & 7);
