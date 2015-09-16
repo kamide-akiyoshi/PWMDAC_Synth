@@ -9,28 +9,28 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 
 #define PWMDAC_OUTPUT_PIN   3
 #include <PWMDAC_Synth.h>
-PWMDAC_CREATE_DEFAULT_INSTANCE();
+PWMDAC_INSTANCE;
 
 void HandleNoteOn(byte channel, byte pitch, byte velocity) { 
   if( velocity == 0 ) {
-    PWM_SYNTH.noteOff(channel,pitch,velocity);
+    PWMDACSynth::noteOff(channel,pitch,velocity);
     return;
   }
-  PWM_SYNTH.noteOn(channel,pitch,velocity);
+  PWMDACSynth::noteOn(channel,pitch,velocity);
 }
 void setupMIDI() {
   MIDI.begin(MIDI_CHANNEL_OMNI); // receives all MIDI channels
   MIDI.turnThruOff(); // Disable MIDI IN -> MIDI OUT mirroring
-  MIDI.setHandleNoteOff(PWM_SYNTH.noteOff);
+  MIDI.setHandleNoteOff(PWMDACSynth::noteOff);
   MIDI.setHandleNoteOn(HandleNoteOn);
-  MIDI.setHandlePitchBend(PWM_SYNTH.pitchBend);
-  MIDI.setHandleControlChange(PWM_SYNTH.controlChange);
+  MIDI.setHandlePitchBend(PWMDACSynth::pitchBend);
+  MIDI.setHandleControlChange(PWMDACSynth::controlChange);
   pinMode(MIDI_ENABLE_PIN,OUTPUT);
   digitalWrite(MIDI_ENABLE_PIN,HIGH); // enable MIDI port
 }
 
 void setup() {
-  PWM_SYNTH.setup();
+  PWMDACSynth::setup();
   setupMIDI();
 }
 
@@ -40,7 +40,7 @@ void loop()
   MIDI.read();
   if( ++tick >= 16 ) {
     tick = 0;
-    PWM_SYNTH.updateEnvelopeStatus();
+    PWMDACSynth::updateEnvelopeStatus();
   }
 }
 

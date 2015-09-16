@@ -1,7 +1,7 @@
 
 [PWMDAC_Synth - PWM DAC synthesizer library for Arduino]
 
-ver.20150915
+ver.20150916
 
 Arduinoで動作する簡易シンセサイザライブラリです。
 
@@ -42,52 +42,54 @@ https://osdn.jp/users/kamide/pf/PWMDAC_Synth/wiki/FrontPage
 置いた後、Arduino IDE のメニュー [ファイル] → [スケッチの例] に
 PWMDAC_Synth が現れることを確認してください。
 
-●出力ピン(PWM)
-
-（PWMDAC_Synth.h 参照）
-
-PWMDAC_Synth.h をインクルードする前に、PWM 出力する Arduino ピン番号を
-#define PWMDAC_OUTPUT_PIN で定義してください。
-
-例：
-	#define PWMDAC_OUTPUT_PIN 3
-	#include <PWMDAC_Synth.h>
-
-指定できるピン番号は 3,9,10,11 のいずれかです。
-
-3,11 を選択した場合は TIMER2、9,10 を選択した場合は TIMER1 が使われます。
-
-なお、5,6 は PWM 端子であっても指定できません。
-これは TIMER0 用の ISR() が Arduino の millis() などのために使われていて
-再定義できなかったためです。
-
-PWM 出力ピンは、そのまま PC の LINE IN などにつないでも一応音は聞こえますが、
-ローパスフィルタで可聴周波数だけを通すようにすると、より聞きやすくなります。
-
 
 ●使い方
 
-・呼び出し側では、最低限、下記の3点を実装する必要があります。
+	// 必要に応じ、PWMDAC_Synth.h をインクルードする前に #define で下記を指定できます。
+	#define PWMDAC_OUTPUT_PIN  3 // PWM出力ピン番号（省略可：下記参照）
+	#define PWMDAC_POLYPHONY   6 // 同時発音数（省略可：デフォルト6重和音）
+	#define PWMDAC_NOTE_A_FREQUENCY 440  // A音のチューニング周波数（省略可：デフォルト440Hz）
 
-	・PWMDAC_CREATE_DEFAULT_INSTANCE() を呼び出し、
-		PWM_SYNTH という変数にインスタンスを生成します。
+	#include <PWMDAC_Synth.h>
+	PWMDAC_INSTANCE; // インスタンス生成（必須）
 
-	・setup() の中で PWM_SYNTH.setup() を使って初期化します。
+	setup() {
+		PWMDACSynth::setup(); // 初期化（必須）
+	}
 
-	・loop() の中で PWM_SYNTH.update() を定期的に呼び出します。
-		これは減衰などのADSRエンベロープ形状の現在位置を一つ進めたり、
-		モジュレーションによって変化する時間ごとの周波数を更新するための関数です。
-		呼び出し頻度は自分でカウンタを用意するなどの方法でコントロールしてください。
-
-	付属のサンプルスケッチ（examples/*.ino）に実装例があります。
-
-	電子楽器 CAmiDion など、実際に PWMDAC_Synth を使っているスケッチも
-	参考にしてください。
-
-	使える関数については PWMDAC_Synth.h を参照してください。
+	loop() {
+		PWMDACSynth::update(); // 状態更新（必須）
+	}
 
 
-・MIDIチャンネル操作
+PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
+現在位置を一つ進めたり、モジュレーションによって変化する時間ごとの
+周波数を更新するための関数です。呼び出し頻度は自分でカウンタを
+用意するなどの方法でコントロールしてください。
+
+付属のサンプルスケッチ（examples/*.ino）に実装例があります。
+電子楽器 CAmiDion など、実際に PWMDAC_Synth を使っているスケッチも
+参考にしてください。
+
+その他、使える関数については PWMDAC_Synth.h を参照してください。
+
+
+●出力ピン(PWM)
+
+	PWM音声出力用として指定できるピン番号は 3,9,10,11 のいずれかです。
+	デフォルトのピン番号は 3 です。
+
+	3,11 を選択した場合は TIMER2、9,10 を選択した場合は TIMER1 が使われます。
+
+	なお、5,6 は PWM 端子であっても指定できません。
+	これは TIMER0 用の ISR() が Arduino の millis() などのために使われていて
+	再定義できなかったためです。
+
+	PWM 出力ピンは、そのまま PC の LINE IN などにつないでも一応音は聞こえますが、
+	ローパスフィルタで可聴周波数だけを通すようにすると、より聞きやすくなります。
+
+
+●MIDIチャンネル操作
 
 	PWM_SYNTH のメソッドで、
 
@@ -101,12 +103,15 @@ PWM 出力ピンは、そのまま PC の LINE IN などにつないでも一応音は聞こえますが、
 	MIDIチャンネルへのポインタは、主に波形やエンベロープパラメータと
 	いった、次回以降の音出し以降に反映するパラメータの設定に使います。
 
-	NOTE OFF、NOTE ON、ピッチベンドは、今出ている音にリアルタイムに
-	反映されるよう、PWM_SYNTH のメソッドからしか操作できないように
-	なっています。
+	NOTE OFF、NOTE ON、ピッチベンドは、リアルタイム性が要求されるので
+	PWMDACSynth から呼び出してください。
+
+	特にピッチベンドは、MidiChannel::setPitchBend() で設定しただけでは
+	今出ている音にリアルタイムに反映されません。
+	PWMDACSynth::pitchBend() を使えばリアルタイムに反映されます。
 
 
-・MIDI関数
+●MIDI関数
 
 	PWM_SYNTH 静的オブジェクトには、MIDIライブラリの MIDI.setHandleXxxx() に
 	直接指定できるよう、引数の順序や型を合わせた関数をいくつか用意しています。
@@ -119,7 +124,7 @@ PWM 出力ピンは、そのまま PC の LINE IN などにつないでも一応音は聞こえますが、
 	指定するように作ってあります。
 
 
-・音色変更
+●音色変更
 	プログラムチェンジには対応していません。
 	代わりににエンベロープパラメータと波形を指定して音色を変更します。
 	（MidiChannel クラスの wavetable や env_param で指定します）
@@ -138,7 +143,7 @@ PWM 出力ピンは、そのまま PC の LINE IN などにつないでも一応音は聞こえますが、
 	和音によって音が重なったとき、レベルが 255 を超えると
 	音割れの原因になります。同時発音数（デフォルト：６重和音）で
 	割った小さめの値で波形を作るようにしてください。
-	なお、PWM_SYNTH にも組み込みの波形配列があるので
+	なお、PWMDACSynth:: にも組み込みの波形配列があるので
 	これを指定すると簡単です。
 
 	・sineWavetable[]	正弦波
@@ -147,7 +152,7 @@ PWM 出力ピンは、そのまま PC の LINE IN などにつないでも一応音は聞こえますが、
 	・sawtoothWavetable[]	のこぎり波
 	・shepardToneSineWavetable[]	正弦波の無限音階（シェパードトーン）
 
-・ユーティリティ
+●ユーティリティ
 	byte musicalMod7(char x)
 	byte musicalMod12(char x)
 		それぞれ7で割った余り、12で割った余りを返します。

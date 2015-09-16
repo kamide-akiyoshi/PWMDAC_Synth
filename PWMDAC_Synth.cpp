@@ -1,10 +1,10 @@
 //
-// PWM DAC Synthesizer ver.20150915
+// PWM DAC Synthesizer ver.20150916
 //
 #include "PWMDAC_Synth.h"
 
+// MIDI channel status holder
 MidiChannel PWMDACSynth::channels[16] = MidiChannel(PWMDACSynth::sineWavetable);
-VoiceStatus PWMDACSynth::voices[POLYPHONY];
 
 byte PWMDACSynth::musicalMod7(char x) {
   while( x & 0xF8 ) x = (x >> 3) + (x & 7);
