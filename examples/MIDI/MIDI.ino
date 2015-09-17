@@ -40,7 +40,7 @@ void loop()
   MIDI.read();
   if( ++tick >= 16 ) {
     tick = 0;
-    PWMDACSynth::updateEnvelopeStatus();
+    PWMDACSynth::update();
   }
 }
 
