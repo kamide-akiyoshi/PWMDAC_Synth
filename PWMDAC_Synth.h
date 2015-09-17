@@ -1,5 +1,5 @@
 //
-// Header for PWM DAC Synthesizer ver.20150916
+// Header for PWM DAC Synthesizer ver.20150917
 //
 // Usage:
 //    #define PWMDAC_OUTPUT_PIN << Your using pin# 3/9/10/11 >>
@@ -14,6 +14,7 @@
 
 #include <Arduino.h>
 #include <wiring_private.h>
+#include <limits.h>
 
 #define NumberOf(array) (sizeof(array)/sizeof((array)[0]))
 #define cbi16(sfr, bit) (_SFR_WORD(sfr) &= ~_BV(bit))
@@ -52,8 +53,10 @@
 // Phase speed table to determine tone pitch
 //
 // [Phase-correct PWM dual-slope]
-//    TCNTn = 00(BOTTOM) 01 02 03 ... FD FE FF(TOP) FE FD ... 03 02 01
-//    -> 510 values (NOT 512)
+//    TCNTn =
+//       00(BOTTOM) 01 02 03 ... FC FD FE
+//       FF(TOP)    FE FD FC ... 03 02 01
+//    -> 255 * 2 = 510 values (NOT 512)
 //
 // ISR()-call interval = 510 / 16MHz = 31.875us
 // 
@@ -64,10 +67,10 @@
 #ifndef PWMDAC_NOTE_A_FREQUENCY
 #define PWMDAC_NOTE_A_FREQUENCY 440 // [Hz]
 #endif
-#define PHASE_SPEED_OF(note_number) (\
-  pow( 2, (double)(note_number - 69)/12 + sizeof(unsigned long) * 8 ) \
-  * PWMDAC_NOTE_A_FREQUENCY * 510 / F_CPU \
-)
+#define NUMBER_OF_ULONG_BITS (8 * sizeof(unsigned long))
+#define PHASE_SPEED_OF(note_number) \
+  ( pow( 2, (double)(note_number - 69)/12 + NUMBER_OF_ULONG_BITS ) \
+  * PWMDAC_NOTE_A_FREQUENCY * 0xFF * 2 / F_CPU )
 
 typedef struct _EnvelopeParam {
   unsigned int attack_speed;
@@ -158,10 +161,10 @@ class VoiceStatus {
     void tickAttack() {
       long next_volume16 = volume16;
       next_volume16 += env_param_p->attack_speed;
-      if( next_volume16 > 0xFFFF ) {
-        ADSR_countdown = 3; setVolume(0xFFFF);
+      if( next_volume16 <= UINT_MAX ) {
+        setVolume(next_volume16); return;
       }
-      else setVolume(next_volume16);
+      ADSR_countdown = 3; setVolume(UINT_MAX);
     }
     void tickDecay() {
       setVolume( volume16 - (volume16 >> env_param_p->decay_time) );
@@ -210,7 +213,7 @@ class MidiChannel {
       env_param.decay_time = 7;
       env_param.sustain_level = 0x8000;
       env_param.release_time = 7;
-      rpns[LSB] = rpns[MSB] = 0xFF;
+      rpns[LSB] = rpns[MSB] = UCHAR_MAX;
       this->wavetable = wavetable;
     }
     double getPitchRate() const { return pitch_rate; }
@@ -366,7 +369,7 @@ class PWMDACSynth {
     }
     static VoiceStatus *getLowestPriorityVoiceStatus() {
       unsigned int priority;
-      unsigned int lowest_priority = 0xFFFF;
+      unsigned int lowest_priority = UINT_MAX;
       VoiceStatus *lowest_priority_vsp = voices;
       for( VoiceStatus *vsp = voices; vsp <= voices + (POLYPHONY - 1); vsp++ ) {
         if( (priority = vsp->getPriority()) >= lowest_priority ) continue;
