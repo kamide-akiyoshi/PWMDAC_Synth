@@ -1,14 +1,8 @@
 //
-// Header for PWM DAC Synthesizer ver.20150919
-//
-// Usage:
-//    #define PWMDAC_OUTPUT_PIN << Your using pin# 3/9/10/11 >>
-//    #define PWMDAC_POLYPHONY n // Optional, default is 6
-//    #include <PWMDAC_Synth.h>
-//    PWMDAC_INSTANCE;
-//       :
-//       :
-//    Your codes
+// PWM DAC Synthesizer ver.20150919
+//  by Akiyoshi Kamide (Twitter: @akiyoshi_kamide)
+//  http://kamide.b.osdn.me/pwmdac_synth_lib/
+//  https://osdn.jp/users/kamide/pf/PWMDAC_Synth/
 //
 #pragma once
 
@@ -63,6 +57,7 @@
 #define PWMDAC_SAWTOOTH_WAVE(x) ((x) / PWMDAC_POLYPHONY)
 #define PWMDAC_SQUARE_WAVE(x)   (((x) < 128 ? 0 : 255) / PWMDAC_POLYPHONY)
 #define PWMDAC_TRIANGLE_WAVE(x) (((x) < 128 ? (x) : 255 - (x)) * 2 / PWMDAC_POLYPHONY)
+
 #define SINPI(x, t) sin(PI * (x) / (t))
 #define PWMDAC_MAX_VOLUME_SINE_WAVE(x)  ((SINPI(x,128) + 1) * 128)
 #define PWMDAC_SINE_WAVE(x)     (PWMDAC_MAX_VOLUME_SINE_WAVE(x) / PWMDAC_POLYPHONY)
@@ -81,10 +76,9 @@ class MidiChannel {
   protected:
     enum ByteSignificance {LSB, MSB};
     byte rpns[2]; // RPN (Registered Parameter Number)
-    static const byte PITCH_BEND_COARSENESS = 6; // 6(FINEST -128..127) .. 13(COARSEST: -1..0)
-    byte pitch_bend_sensitivity;  // +/- max semitones 0 .. 24(= 2 octaves)
+    byte pitch_bend_sensitivity; // +/- max semitones 0 .. 24(= 2 octaves)
+    int pitch_bend; // Signed 14bit value : -8192(lowest) .. 0(center) .. +8191(highest)
     double pitch_rate; // positive value only: low .. 1.0(center) .. high
-    char coarse_pitch_bend;
   public:
     byte modulation;  // 0 ... 127 (unsigned 7 bit - MSB only)
     PROGMEM const byte *wavetable;
@@ -92,7 +86,7 @@ class MidiChannel {
     MidiChannel(PROGMEM const byte wavetable[]) {
       modulation = 0;
       pitch_bend_sensitivity = 2;
-      coarse_pitch_bend = 0;
+      pitch_bend = 0;
       pitch_rate = 1.0;
       env_param.attack_speed = 0x8000;
       env_param.decay_time = 7;
@@ -102,15 +96,12 @@ class MidiChannel {
       this->wavetable = wavetable;
     }
     double getPitchRate() const { return pitch_rate; }
-    void setPitchBend(int bend) {
-      // Signed 14bit value : -8192(lowest) .. 0(center) .. +8191(highest)
-      char coarse = bend >> PITCH_BEND_COARSENESS;
-      if( coarse_pitch_bend == coarse ) return;
-      coarse_pitch_bend = coarse;
+    boolean pitchBendChange(int bend) {
+      if( (pitch_bend & 0xFFF0) == (bend & 0xFFF0) ) return false;
       pitch_rate = pow( 2,
-        (float)((int)coarse_pitch_bend * pitch_bend_sensitivity) /
-        (float)((8191 >> PITCH_BEND_COARSENESS) * 12)
-      );
+        (float)pitch_bend_sensitivity/(float)12 *
+        (float)(pitch_bend = bend)/(float)8191 );
+      return true;
     }
     void controlChange(byte number, byte value) {
       switch(number) {
@@ -140,7 +131,7 @@ class VoiceStatus {
       this->wavetable = wavetable;
       env_param_p = ep;
       dphase_original = pgm_read_dword(phase_speed_table + (this->note = note));
-      changePitchRate(pitch_rate);
+      setPitchRate(pitch_rate);
       adsr = ADSR_ATTACK;
     }
     void release() { adsr = ADSR_RELEASE; }
@@ -166,7 +157,7 @@ class VoiceStatus {
       updateModulationStatus(modulation, modulation_offset);
       updateEnvelopeStatus();
     }
-    void changePitchRate(double rate) {
+    void setPitchRate(double rate) {
       dphase = dphase_pitch_bend = dphase_original * rate;
     }
   protected:
@@ -182,7 +173,6 @@ class VoiceStatus {
     PROGMEM const byte *wavetable;
     EnvelopeParam *env_param_p;
     AdsrStatus adsr;
-    inline byte nextPhase() { return (phase += dphase) >> 24; }
     void soundOff() {
       adsr = ADSR_OFF; volume8 = 0; volume16 = 0;
       phase = dphase = dphase_pitch_bend = dphase_original = 0L;
@@ -327,8 +317,9 @@ class PWMDACSynth {
     }
     static void pitchBend(byte channel, int bend) {
       MidiChannel *cp = getChannel(channel);
-      cp->setPitchBend(bend);
-      EACH_VOICE(v) if(v->isVoiceOn(channel)) v->changePitchRate(cp->getPitchRate());
+      if ( ! cp->pitchBendChange(bend) ) return;
+      double pitch_rate = cp->getPitchRate();
+      EACH_VOICE(v) if(v->isVoiceOn(channel)) v->setPitchRate(pitch_rate);
     }
     static void controlChange(byte channel, byte number, byte value) {
       getChannel(channel)->controlChange(number, value);
