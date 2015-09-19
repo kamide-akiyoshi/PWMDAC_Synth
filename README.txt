@@ -1,7 +1,7 @@
 
 [PWMDAC_Synth - PWM DAC synthesizer library for Arduino]
 
-ver.20150916
+ver.20150919
 
 Arduinoで動作する簡易シンセサイザライブラリです。
 
@@ -47,7 +47,7 @@ PWMDAC_Synth が現れることを確認してください。
 
 	// 必要に応じ、PWMDAC_Synth.h をインクルードする前に #define で下記を指定できます。
 	#define PWMDAC_OUTPUT_PIN  3 // PWM出力ピン番号（省略可：下記参照）
-	#define PWMDAC_POLYPHONY   6 // 同時発音数（省略可：デフォルト6重和音）
+	#define PWMDAC_POLYPHONY   6 // 同時発音数（省略可：下記参照）
 	#define PWMDAC_NOTE_A_FREQUENCY 440  // A音のチューニング周波数（省略可：デフォルト440Hz）
 
 	#include <PWMDAC_Synth.h>
@@ -72,6 +72,15 @@ PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
 参考にしてください。
 
 その他、使える関数については PWMDAC_Synth.h を参照してください。
+
+
+●同時発音数
+
+	デフォルトは6重和音です。
+	PWMDAC_POLYPHONY に数値を設定してコンパイルし直すことで変更可能です。
+
+	あまり大きすぎると処理が追いつかず動作しない場合があります。
+	7重和音ぐらいまでが限界のようです。
 
 
 ●出力ピン(PWM)
