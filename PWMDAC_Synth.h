@@ -70,16 +70,13 @@ class MidiChannel {
     byte modulation;  // 0 ... 127 (unsigned 7 bit - MSB only)
     PROGMEM const byte *wavetable;
     EnvelopeParam env_param;
-    MidiChannel(PROGMEM const byte *wavetable) {
+    MidiChannel(PROGMEM const byte *wavetable, const EnvelopeParam env_param) {
       modulation = 0;
+      rpns[LSB] = rpns[MSB] = UCHAR_MAX;
       pitch_bend_sensitivity = 2;
       pitch_bend = 0;
       pitch_rate = 1.0;
-      env_param.attack_speed = 0x8000;
-      env_param.decay_time = 7;
-      env_param.sustain_level = 0x8000;
-      env_param.release_time = 7;
-      rpns[LSB] = rpns[MSB] = UCHAR_MAX;
+      this->env_param = env_param;
       this->wavetable = wavetable;
     }
     double getPitchRate() const { return pitch_rate; }
@@ -359,10 +356,10 @@ class PWMDACSynth {
 #undef EACH_VOICE
 };
 
-#define PWMDAC_CREATE_INSTANCE(table, function) \
+#define PWMDAC_CREATE_INSTANCE(table, function, env_param) \
   ISR(PWMDAC_OVF_vect) { PWMDACSynth::updatePulseWidth(); } \
   VoiceStatus PWMDACSynth::voices[PWMDAC_POLYPHONY]; \
   PWMDAC_CREATE_WAVETABLE(PWMDACSynth::maxVolumeSineWavetable, PWMDAC_MAX_VOLUME_SINE_WAVE); \
   PWMDAC_CREATE_WAVETABLE(table, function); \
-  MidiChannel PWMDACSynth::channels[16] = MidiChannel(table);
+  MidiChannel PWMDACSynth::channels[16] = MidiChannel(table, env_param);
 

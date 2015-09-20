@@ -9,7 +9,8 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 
 #define PWMDAC_OUTPUT_PIN   3
 #include <PWMDAC_Synth.h>
-PWMDAC_INSTANCE;
+const EnvelopeParam DEFAULT_ENV_PARAM = {0x1000, 10, 0, 8};
+PWMDAC_CREATE_INSTANCE(sineWavetable, PWMDAC_SINE_WAVE, DEFAULT_ENV_PARAM);
 
 void HandleNoteOn(byte channel, byte pitch, byte velocity) { 
   if( velocity == 0 ) {
@@ -18,7 +19,9 @@ void HandleNoteOn(byte channel, byte pitch, byte velocity) {
   }
   PWMDACSynth::noteOn(channel,pitch,velocity);
 }
-void setupMIDI() {
+
+void setup() {
+  PWMDACSynth::setup();
   MIDI.begin(MIDI_CHANNEL_OMNI); // receives all MIDI channels
   MIDI.turnThruOff(); // Disable MIDI IN -> MIDI OUT mirroring
   MIDI.setHandleNoteOff(PWMDACSynth::noteOff);
@@ -29,13 +32,7 @@ void setupMIDI() {
   digitalWrite(MIDI_ENABLE_PIN,HIGH); // enable MIDI port
 }
 
-void setup() {
-  PWMDACSynth::setup();
-  setupMIDI();
-}
-
-void loop()
-{
+void loop() {
   static byte tick=0;
   MIDI.read();
   if( ++tick >= 16 ) {
@@ -43,4 +40,3 @@ void loop()
     PWMDACSynth::update();
   }
 }
-

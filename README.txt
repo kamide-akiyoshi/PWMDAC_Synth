@@ -1,7 +1,7 @@
 
 [PWMDAC_Synth - PWM DAC synthesizer library for Arduino]
 
-ver.20150919
+ver.20150920
 
 Arduinoで動作する簡易シンセサイザライブラリです。
 
@@ -53,10 +53,11 @@ PWMDAC_Synth が現れることを確認してください。
 
 	#include <PWMDAC_Synth.h>
 	//
-	// 初期波形（波形テーブル変数名、波形生成マクロ）を指定し、
+	// 初期波形（波形テーブル変数名、波形生成マクロ、エンベロープ初期値）を指定し、
 	// 最低限必要な実体（インスタンス）を生成します。
 	//
-	PWMDAC_CREATE_INSTANCE(sawtoothWavetable, PWMDAC_SAWTOOTH_WAVE);
+	const EnvelopeParam DEFAULT_ENV_PARAM = {0x1000, 10, 0, 8};
+	PWMDAC_CREATE_INSTANCE(sawtoothWavetable, PWMDAC_SAWTOOTH_WAVE, DEFAULT_ENV_PARAM);
 	//
 	// 初期波形以外の波形テーブルの実体を、必要な分だけ定義します。
 	// （不要な波形を定義しないようにすることで、プログラムメモリ領域の節約になります）
@@ -90,10 +91,12 @@ PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
 ●同時発音数
 
 	デフォルトは6重和音です。
-	PWMDAC_POLYPHONY に数値を設定してコンパイルし直すことで変更可能です。
 
-	あまり大きすぎると処理が追いつかず動作しない場合があります。
-	7重和音ぐらいまでが限界のようです。
+	PWMDAC_POLYPHONY に数値を設定してコンパイルし直すことで、
+	同時発音数を増減させることができます。
+
+	同時発音数を増やしすぎると、その分、割り込み処理に時間がかかって
+	割り込み以外の処理を行う余裕がなくなり、正常に動作しなくなります。
 
 
 ●出力ピン(PWM)
@@ -151,8 +154,6 @@ PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
 	波形とエンベロープパラメータ（ADSR）と波形を MidiChannel クラスの
 	wavetable と env_param に指定することで、音色を変更できます。
 
-	なお、現在のところMIDIのプログラムチェンジには対応していません。
-
 	ADSRの設定は EnvelopeParam 構造体を介して行います。
 
 	・attack_speed - アタック速度（小さいほどアタックタイムがゆっくり）
@@ -160,11 +161,10 @@ PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
 	・sustain_level - サスティンレベル（減衰が止まったあと維持する音量）
 	・release_time - リリース時間（大きいほどノートオフ後の減衰がゆっくり）
 
-	なお、これらの時間は loop() 内で update() を呼び出す頻度に
-	よって変わります。
+	これらの時間は loop() 内で update() を呼び出す頻度によって変わります。
 
 	波形テーブルは、要素数256のbyte型PROGMEM配列として生成します。
-	それを wavetable に指定すると波形が変わります。
+	それを wavetable に指定することで、波形を切り替えることができます。
 
 	波形テーブル配列の生成は、PWMDAC_Synth.h 上で定義された
 	マクロを使い、必要な波形テーブルだけを生成してください。
