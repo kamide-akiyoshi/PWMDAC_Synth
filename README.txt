@@ -46,12 +46,25 @@ PWMDAC_Synth が現れることを確認してください。
 ●使い方
 
 	// 必要に応じ、PWMDAC_Synth.h をインクルードする前に #define で下記を指定できます。
+	//
 	#define PWMDAC_OUTPUT_PIN  3 // PWM出力ピン番号（省略可：下記参照）
 	#define PWMDAC_POLYPHONY   6 // 同時発音数（省略可：下記参照）
 	#define PWMDAC_NOTE_A_FREQUENCY 440  // A音のチューニング周波数（省略可：デフォルト440Hz）
 
 	#include <PWMDAC_Synth.h>
-	PWMDAC_INSTANCE; // インスタンス生成（必須）
+	//
+	// 初期波形（波形テーブル変数名、波形生成マクロ）を指定し、
+	// 最低限必要な実体（インスタンス）を生成します。
+	//
+	PWMDAC_CREATE_INSTANCE(sawtoothWavetable, PWMDAC_SAWTOOTH_WAVE);
+	//
+	// 初期波形以外の波形テーブルの実体を、必要な分だけ定義します。
+	// （不要な波形を定義しないようにすることで、プログラムメモリ領域の節約になります）
+	//
+	PWMDAC_ADDITIONAL_WAVETABLE(squareWavetable, PWMDAC_SQUARE_WAVE);
+	PWMDAC_ADDITIONAL_WAVETABLE(triangleWavetable, PWMDAC_TRIANGLE_WAVE);
+	PWMDAC_ADDITIONAL_WAVETABLE(sineWavetable, PWMDAC_SINE_WAVE);
+	PWMDAC_ADDITIONAL_WAVETABLE(shepardToneSineWavetable, PWMDAC_SHEPARD_TONE);
 
 	setup() {
 		PWMDACSynth::setup(); // 初期化（必須）
@@ -134,25 +147,25 @@ PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
 
 
 ●音色変更
-	プログラムチェンジには対応していません。
-	代わりににエンベロープパラメータと波形を指定して音色を変更します。
-	（MidiChannel クラスの wavetable や env_param で指定します）
 
-	エンベロープパラメータは EnvelopeParam 構造体を介して行います。
+	波形とエンベロープパラメータ（ADSR）と波形を MidiChannel クラスの
+	wavetable と env_param に指定することで、音色を変更できます。
+
+	なお、現在のところMIDIのプログラムチェンジには対応していません。
+
+	ADSRの設定は EnvelopeParam 構造体を介して行います。
 
 	・attack_speed - アタック速度（小さいほどアタックタイムがゆっくり）
 	・decay_time - ディケイ時間（大きいほどノートオン後の減衰がゆっくり）
 	・sustain_level - サスティンレベル（減衰が止まったあと維持する音量）
 	・release_time - リリース時間（大きいほどノートオフ後の減衰がゆっくり）
 
-	なお、これらの時間は loop() 内で update() を呼び出す頻度によって変わります。
+	なお、これらの時間は loop() 内で update() を呼び出す頻度に
+	よって変わります。
 
-	波形は、PROGMEM 配列（要素数256のbyte型に限る）を指定して行います。
+	波形は、要素数256のbyte型PROGMEM配列を指定して行います。
 
-	和音によって音が重なったとき、レベルが 255 を超えると
-	音割れの原因になります。同時発音数（デフォルト：６重和音）で
-	割った小さめの値で波形を作るようにしてください。
-	なお、PWMDACSynth:: にも組み込みの波形配列があるので
+	下記のような組み込み波形配列が PWMDACSynth:: にあるので
 	これを指定すると簡単です。
 
 	・sineWavetable[]	正弦波
@@ -160,6 +173,14 @@ PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
 	・triangleWavetable[]	三角波
 	・sawtoothWavetable[]	のこぎり波
 	・shepardToneSineWavetable[]	正弦波の無限音階（シェパードトーン）
+
+	これらの波形は、PWMDAC_Synth.h 上に記述した #define で
+	コンパイル前に自動計算させています。同時発音数が増えても信号レベルが
+	255を超えて音割れせず、かつ最大音量の出るような計算式になっています。
+
+	これに習って自分で波形を定義すれば、それを指定して独自の音色を
+	生み出すことも可能です。
+
 
 ●ユーティリティ
 	byte musicalMod7(char x)

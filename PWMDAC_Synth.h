@@ -1,5 +1,5 @@
 //
-// PWM DAC Synthesizer ver.20150919
+// PWM DAC Synthesizer ver.20150920
 //  by Akiyoshi Kamide (Twitter: @akiyoshi_kamide)
 //  http://kamide.b.osdn.me/pwmdac_synth_lib/
 //  https://osdn.jp/users/kamide/pf/PWMDAC_Synth/
@@ -37,25 +37,10 @@
 #define PWMDAC_POLYPHONY 6
 #endif
 
-// [Phase-correct PWM dual-slope]
-//    TCNTn =
-//       00(BOTTOM) 01 02 03 ... FC FD FE
-//       FF(TOP)    FE FD FC ... 03 02 01
-//    -> 0xFF * 2 = 510 values (NOT 512)
-//
-// ISR()-call interval = (0xFF * 2) / F_CPU(16MHz) = 31.875us
-// 
-// [MIDI Tuning Standard]
-// http://en.wikipedia.org/wiki/MIDI_Tuning_Standard
-//    fn(d) = 440 Hz * 2^( (d - 69) / 12 )  MIDI note # d = 0..127
-//
-#define PHASE_SPEED_OF(note_number) ( \
-  pow( 2, ((double)note_number - 69)/12 + BitSizeOf(unsigned long) ) \
-  * PWMDAC_NOTE_A_FREQUENCY * 0xFF * 2 / F_CPU )
 
-// Wavetable generator
-#define PWMDAC_SAWTOOTH_WAVE(x) ((x) / PWMDAC_POLYPHONY)
+// Built-in wavetable generator
 #define PWMDAC_SQUARE_WAVE(x)   (((x) < 128 ? 0 : 255) / PWMDAC_POLYPHONY)
+#define PWMDAC_SAWTOOTH_WAVE(x) ((x) / PWMDAC_POLYPHONY)
 #define PWMDAC_TRIANGLE_WAVE(x) (((x) < 128 ? (x) : 255 - (x)) * 2 / PWMDAC_POLYPHONY)
 
 #define SINPI(x, t) sin(PI * (x) / (t))
@@ -64,6 +49,8 @@
 #define PWMDAC_SHEPARD_TONE(x)  (( \
   SINPI(x,128) + SINPI(x,64) + SINPI(x,32) + SINPI(x,16) + \
   SINPI(x,8)   + SINPI(x,4)  + SINPI(x,2)  + SINPI(x,1)  + 8 ) * 16 / PWMDAC_POLYPHONY)
+
+#define PWMDAC_CREATE_WAVETABLE(table, function) PROGMEM const byte table[] = ARRAY256(function)
 
 typedef struct _EnvelopeParam {
   unsigned int attack_speed;
@@ -83,7 +70,7 @@ class MidiChannel {
     byte modulation;  // 0 ... 127 (unsigned 7 bit - MSB only)
     PROGMEM const byte *wavetable;
     EnvelopeParam env_param;
-    MidiChannel(PROGMEM const byte wavetable[]) {
+    MidiChannel(PROGMEM const byte *wavetable) {
       modulation = 0;
       pitch_bend_sensitivity = 2;
       pitch_bend = 0;
@@ -117,6 +104,22 @@ class MidiChannel {
     }
 };
 
+// [Phase-correct PWM dual-slope]
+//    TCNTn =
+//       00(BOTTOM) 01 02 03 ... FC FD FE
+//       FF(TOP)    FE FD FC ... 03 02 01
+//    -> 0xFF * 2 = 510 values (NOT 512)
+//
+// ISR()-call interval = (0xFF * 2) / F_CPU(16MHz) = 31.875us
+// 
+// [MIDI Tuning Standard]
+// http://en.wikipedia.org/wiki/MIDI_Tuning_Standard
+//    fn(d) = 440 Hz * 2^( (d - 69) / 12 )  MIDI note # d = 0..127
+//
+#define PHASE_SPEED_OF(note_number) ( \
+  pow( 2, ((double)note_number - 69)/12 + BitSizeOf(unsigned long) ) \
+  * PWMDAC_NOTE_A_FREQUENCY * 0xFF * 2 / F_CPU )
+
 class VoiceStatus {
   public:
     VoiceStatus() { soundOff(); }
@@ -135,6 +138,10 @@ class VoiceStatus {
       adsr = ADSR_ATTACK;
     }
     void release() { adsr = ADSR_RELEASE; }
+    inline unsigned int nextPulseWidth() {
+      phase += dphase;
+      return volume8 * pgm_read_byte(wavetable + (phase >> 24));
+    }
     unsigned int getPriority() { return ((unsigned int)adsr << 8) + volume8; }
     boolean isVoiceOn() const { return volume8; }
     boolean isVoiceOn(byte channel) const {
@@ -149,9 +156,6 @@ class VoiceStatus {
     }
     boolean isNoteOn(byte channel, byte note) const {
       return isNoteOn(channel) && this->note == note;
-    }
-    inline unsigned int nextPulseWidth() {
-      return volume8 * pgm_read_byte( wavetable + ((phase += dphase) >> 24) );
     }
     void update(byte modulation, int modulation_offset) {
       updateModulationStatus(modulation, modulation_offset);
@@ -241,11 +245,6 @@ class VoiceStatus {
 
 class PWMDACSynth {
   public:
-    static PROGMEM const byte sineWavetable[];
-    static PROGMEM const byte squareWavetable[];
-    static PROGMEM const byte triangleWavetable[];
-    static PROGMEM const byte sawtoothWavetable[];
-    static PROGMEM const byte shepardToneSineWavetable[];
     static void setup() { // must be called from setup() once
       pinMode(PWMDAC_OUTPUT_PIN,OUTPUT);
 #ifdef PWMDAC_USE_TIMER1
@@ -360,14 +359,10 @@ class PWMDACSynth {
 #undef EACH_VOICE
 };
 
-#define PWMDAC_INSTANCE \
+#define PWMDAC_CREATE_INSTANCE(table, function) \
   ISR(PWMDAC_OVF_vect) { PWMDACSynth::updatePulseWidth(); } \
   VoiceStatus PWMDACSynth::voices[PWMDAC_POLYPHONY]; \
-  MidiChannel PWMDACSynth::channels[16] = MidiChannel(PWMDACSynth::sineWavetable); \
-  PROGMEM const byte PWMDACSynth::sawtoothWavetable[] = ARRAY256(PWMDAC_SAWTOOTH_WAVE); \
-  PROGMEM const byte PWMDACSynth::squareWavetable[]   = ARRAY256(PWMDAC_SQUARE_WAVE); \
-  PROGMEM const byte PWMDACSynth::triangleWavetable[] = ARRAY256(PWMDAC_TRIANGLE_WAVE); \
-  PROGMEM const byte PWMDACSynth::sineWavetable[]     = ARRAY256(PWMDAC_SINE_WAVE); \
-  PROGMEM const byte PWMDACSynth::shepardToneSineWavetable[] = ARRAY256(PWMDAC_SHEPARD_TONE); \
-  PROGMEM const byte PWMDACSynth::maxVolumeSineWavetable[] =   ARRAY256(PWMDAC_MAX_VOLUME_SINE_WAVE)
+  PWMDAC_CREATE_WAVETABLE(PWMDACSynth::maxVolumeSineWavetable, PWMDAC_MAX_VOLUME_SINE_WAVE); \
+  PWMDAC_CREATE_WAVETABLE(table, function); \
+  MidiChannel PWMDACSynth::channels[16] = MidiChannel(table);
 
