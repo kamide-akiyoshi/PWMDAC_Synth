@@ -151,7 +151,7 @@ PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
 
 ●音色変更
 
-	波形とエンベロープパラメータ（ADSR）と波形を MidiChannel クラスの
+	波形とエンベロープパラメータ（ADSR）を MidiChannel クラスの
 	wavetable と env_param に指定することで、音色を変更できます。
 
 	ADSRの設定は EnvelopeParam 構造体を介して行います。
