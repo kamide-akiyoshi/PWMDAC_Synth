@@ -1,5 +1,5 @@
 //
-// PWM DAC Synthesizer ver.20150920
+// PWM DAC Synthesizer ver.20150921
 //  by Akiyoshi Kamide (Twitter: @akiyoshi_kamide)
 //  http://kamide.b.osdn.me/pwmdac_synth_lib/
 //  https://osdn.jp/users/kamide/pf/PWMDAC_Synth/
@@ -16,8 +16,7 @@
 #define sbi16(sfr, bit) (_SFR_WORD(sfr) |= _BV(bit))
 
 // Function-to-array generator
-#define FX(f,x)     f(x)
-#define FX2(f,x)    FX(f,x),  FX(f,x + 1)
+#define FX2(f,x)    f(x), f(x + 1)
 #define FX4(f,x)    FX2(f,x), FX2(f,x + 2)
 #define FX8(f,x)    FX4(f,x), FX4(f,x + 4)
 #define FX16(f,x)   FX8(f,x), FX8(f,x + 8)

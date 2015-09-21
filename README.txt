@@ -1,7 +1,7 @@
 
 [PWMDAC_Synth - PWM DAC synthesizer library for Arduino]
 
-ver.20150920
+ver.20150921
 
 Arduinoで動作する簡易シンセサイザライブラリです。
 
