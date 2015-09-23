@@ -131,7 +131,7 @@ PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
 	NOTE OFF、NOTE ON、ピッチベンドは、リアルタイム性が要求されるので
 	PWMDACSynth から呼び出してください。
 
-	特にピッチベンドは、MidiChannel::setPitchBend() で設定しただけでは
+	特にピッチベンドは、MidiChannel::pitchBendChange() で設定しただけでは
 	今出ている音にリアルタイムに反映されません。
 	PWMDACSynth::pitchBend() を使えばリアルタイムに反映されます。
 
