@@ -1,7 +1,7 @@
 
 [PWMDAC_Synth - PWM DAC synthesizer library for Arduino]
 
-ver.20150921
+ver.20150926
 
 Arduinoで動作する簡易シンセサイザライブラリです。
 
@@ -56,7 +56,7 @@ PWMDAC_Synth が現れることを確認してください。
 	// 初期波形（波形テーブル変数名、波形生成マクロ、エンベロープ初期値）を指定し、
 	// 最低限必要な実体（インスタンス）を生成します。
 	//
-	const EnvelopeParam DEFAULT_ENV_PARAM = {0x1000, 10, 0, 8};
+	const EnvelopeParam DEFAULT_ENV_PARAM = {4, 10, 128, 8};
 	PWMDAC_CREATE_INSTANCE(sawtoothWavetable, PWMDAC_SAWTOOTH_WAVE, DEFAULT_ENV_PARAM);
 	//
 	// 初期波形以外の波形テーブルの実体を、必要な分だけ定義します。
@@ -156,7 +156,7 @@ PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
 
 	ADSRの設定は EnvelopeParam 構造体を介して行います。
 
-	・attack_speed - アタック速度（小さいほどアタックタイムがゆっくり）
+	・attack_time - アタック時間（大きいほどノートオン直後の立ち上がりがゆっくり）
 	・decay_time - ディケイ時間（大きいほどノートオン後の減衰がゆっくり）
 	・sustain_level - サスティンレベル（減衰が止まったあと維持する音量）
 	・release_time - リリース時間（大きいほどノートオフ後の減衰がゆっくり）
