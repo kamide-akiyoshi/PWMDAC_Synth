@@ -125,15 +125,12 @@ PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
 	MidiChannel *getChannel(char channel)
 	char getChannel(MidiChannel *cp)
 
-	MIDIチャンネルへのポインタは、主に波形やエンベロープパラメータと
-	いった、次回以降の音出し以降に反映するパラメータの設定に使います。
+	MIDIチャンネルへのポインタを介してチャンネル単位に持たせる
+	パラメータを操作できます。
 
-	NOTE OFF、NOTE ON、ピッチベンドは、リアルタイム性が要求されるので
-	PWMDACSynth から呼び出してください。
-
-	特にピッチベンドは、MidiChannel::pitchBendChange() で設定しただけでは
-	今出ている音にリアルタイムに反映されません。
-	PWMDACSynth::pitchBend() を使えばリアルタイムに反映されます。
+	ただし、ノートオン、ノートオフ、ピッチベンドなどを今出ている音に
+	即座に反映させるためには、MidiChannel ではなく PWMDACSynth の
+	メンバ関数を呼び出す必要があります。
 
 
 ●MIDI関数
@@ -161,7 +158,10 @@ PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
 	・sustain_level - サスティンレベル（減衰が止まったあと維持する音量）
 	・release_time - リリース時間（大きいほどノートオフ後の減衰がゆっくり）
 
-	これらの時間は loop() 内で update() を呼び出す頻度によって変わります。
+	時間の値は 0～15 の範囲です。
+	実時間は loop() 内で update() を呼び出す頻度によって変わります。
+
+	サスティンレベルは 0～255 の範囲です。
 
 	波形テーブルは、要素数256のbyte型PROGMEM配列として生成します。
 	それを wavetable に指定することで、波形を切り替えることができます。

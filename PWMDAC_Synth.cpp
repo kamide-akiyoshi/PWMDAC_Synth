@@ -1,5 +1,5 @@
 //
-// PWM DAC Synthesizer ver.20150926
+// PWM DAC Synthesizer ver.20150927
 //  by Akiyoshi Kamide (Twitter: @akiyoshi_kamide)
 //  http://kamide.b.osdn.me/pwmdac_synth_lib/
 //  https://osdn.jp/users/kamide/pf/PWMDAC_Synth/
