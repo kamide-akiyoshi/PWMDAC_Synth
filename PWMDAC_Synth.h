@@ -1,5 +1,5 @@
 //
-// PWM DAC Synthesizer ver.20150927
+// PWM DAC Synthesizer ver.20151003
 //  by Akiyoshi Kamide (Twitter: @akiyoshi_kamide)
 //  http://kamide.b.osdn.me/pwmdac_synth_lib/
 //  https://osdn.jp/users/kamide/pf/PWMDAC_Synth/
@@ -51,12 +51,21 @@
 
 #define PWMDAC_CREATE_WAVETABLE(table, function) PROGMEM const byte table[] = ARRAY256(function)
 
-typedef struct _EnvelopeParam {
-  byte attack_time;   // 0..15
-  byte decay_time;    // 0..15
-  byte sustain_level; // 0..255
-  byte release_time;  // 0..15
-} EnvelopeParam;
+enum AdsrStatus : byte {ADSR_OFF, ADSR_RELEASE, ADSR_SUSTAIN, ADSR_DECAY, ADSR_ATTACK};
+
+class EnvelopeParam {
+  public:
+    EnvelopeParam() { }
+    EnvelopeParam(byte attack_time, byte decay_time, byte sustain_level, byte release_time) {
+      *getParam(ADSR_ATTACK) = attack_time;
+      *getParam(ADSR_DECAY) = decay_time;
+      *getParam(ADSR_SUSTAIN) = sustain_level;
+      *getParam(ADSR_RELEASE) = release_time;
+    }
+    byte *getParam(AdsrStatus adsr) { return param + (byte)adsr - 1; }
+  protected:
+    byte param[4];
+};
 
 class MidiChannel {
   protected:
@@ -128,17 +137,17 @@ class MidiChannel {
 
 class VoiceStatus {
   public:
-    enum AdsrStatus : byte {ADSR_OFF, ADSR_RELEASE, ADSR_SUSTAIN, ADSR_DECAY, ADSR_ATTACK};
     AdsrStatus getAdsrStatus() const { return adsr; }
-    boolean isOn() { return adsr > ADSR_OFF; }
+    boolean isSoundOn() { return adsr > ADSR_OFF; }
     boolean isNoteOn(byte note) { return this->note == note && adsr > ADSR_RELEASE; }
     MidiChannel *getChannel() const { return channel; }
     byte getNote() const { return note; }
     unsigned int getVolume16() const { return volume.v16; }
     inline byte getVolume8() const { return volume.v8[sizeof(volume.v8) - 1]; }
     inline unsigned int nextPulseWidth() { return getVolume8() * nextWavePoint(); }
-    unsigned long getTemperature() {
-      return (adsr << 16) | (adsr == ADSR_ATTACK ? UINT_MAX - volume.v16 : volume.v16);
+    unsigned int getTemperature() {
+      unsigned int t = volume.v16 >> 1;
+      return adsr == ADSR_ATTACK ? UINT_MAX - t : t;
     }
     VoiceStatus() { reset(); }
     void setChannel(MidiChannel *cp) { if( this->channel != cp ) reset(cp); }
@@ -194,21 +203,21 @@ class VoiceStatus {
       switch(adsr) {
         case ADSR_ATTACK: {
           unsigned long v32 = volume.v16;
-          if( (v32 += (UINT_MAX >> channel->env_param.attack_time)) > UINT_MAX ) {
+          if( ( v32 += (UINT_MAX >> *(channel->env_param.getParam(ADSR_ATTACK))) ) > UINT_MAX ) {
              volume.v16 = UINT_MAX; adsr = ADSR_DECAY; break;
           }
           volume.v16 = v32; break;
         }
         case ADSR_DECAY: {
-          unsigned int dv = volume.v16 >> channel->env_param.decay_time;
+          unsigned int dv = volume.v16 >> *(channel->env_param.getParam(ADSR_DECAY));
           if( dv == 0 ) dv = 1;
           long v32 = volume.v16;
-          unsigned int s = (unsigned int)channel->env_param.sustain_level << 8;
+          unsigned int s = (unsigned int)(*(channel->env_param.getParam(ADSR_SUSTAIN))) << 8;
           if( (v32 -= dv) <= s ) { volume.v16 = s; adsr = ADSR_SUSTAIN; break; }
           volume.v16 = v32; break;
         }
         case ADSR_RELEASE: {
-          unsigned int dv = volume.v16 >> channel->env_param.release_time;
+          unsigned int dv = volume.v16 >> *(channel->env_param.getParam(ADSR_RELEASE));
           if( dv == 0 ) dv = 1;
           long v32 = volume.v16;
           if( (v32 -= dv) < 0x100 ) { reset(); break; }
@@ -305,7 +314,7 @@ class PWMDACSynth {
       EACH_VOICE(v) v->update(modulation_offset);
     }
 #define ALL_CHANNEL for( int i=0; i<NumberOf(channels); i++ ) channels[i]
-    static void setEnvelope(struct _EnvelopeParam ep) { ALL_CHANNEL.env_param = ep; }
+    static void setEnvelope(EnvelopeParam ep) { ALL_CHANNEL.env_param = ep; }
     static void setWave(PROGMEM byte *wt) { ALL_CHANNEL.wavetable = wt; }
 #undef ALL_CHANNEL
     static void noteOff(byte channel, byte pitch, byte velocity) {
@@ -319,7 +328,7 @@ class PWMDACSynth {
     static void pitchBend(byte channel, int bend) {
       MidiChannel *cp = getChannel(channel);
       if ( ! cp->pitchBendChange(bend) ) return;
-      EACH_VOICE(v) if( v->isOn() && v->getChannel() == cp ) v->updatePitch();
+      EACH_VOICE(v) if( v->isSoundOn() && v->getChannel() == cp ) v->updatePitch();
     }
     static void controlChange(byte channel, byte number, byte value) {
       getChannel(channel)->controlChange(number, value);
@@ -345,10 +354,10 @@ class PWMDACSynth {
     static VoiceStatus *selectVoiceToAttack(MidiChannel *channel, byte note) {
       EACH_VOICE(v) if( v->isNoteOn(note) && v->getChannel() == channel ) return v;
       struct {
-        unsigned long temperature = ULONG_MAX;
+        unsigned int temperature = UINT_MAX;
         VoiceStatus *voice = NULL;
       } coldest;
-      unsigned long temperature;
+      unsigned int temperature;
       EACH_VOICE(v) {
         if( (temperature = v->getTemperature()) > coldest.temperature ) continue;
         coldest.temperature = temperature;

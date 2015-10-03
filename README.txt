@@ -1,7 +1,7 @@
 
 [PWMDAC_Synth - PWM DAC synthesizer library for Arduino]
 
-ver.20150927
+ver.20151003
 
 Arduinoで動作する簡易シンセサイザライブラリです。
 
@@ -151,7 +151,8 @@ PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
 	波形とエンベロープパラメータ（ADSR）を MidiChannel クラスの
 	wavetable と env_param に指定することで、音色を変更できます。
 
-	ADSRの設定は EnvelopeParam 構造体を介して行います。
+	ADSRの設定は EnvelopeParam クラスを介して行います。
+	コンストラクタで次の値を指定して初期化できます。
 
 	・attack_time - アタック時間（大きいほどノートオン直後の立ち上がりがゆっくり）
 	・decay_time - ディケイ時間（大きいほどノートオン後の減衰がゆっくり）
@@ -162,6 +163,8 @@ PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
 	実時間は loop() 内で update() を呼び出す頻度によって変わります。
 
 	サスティンレベルは 0～255 の範囲です。
+
+	各ADSRパラメータ値へのポインタは getParam() メソッドで取得できます。
 
 	波形テーブルは、要素数256のbyte型PROGMEM配列として生成します。
 	それを wavetable に指定することで、波形を切り替えることができます。
