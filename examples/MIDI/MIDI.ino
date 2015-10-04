@@ -9,7 +9,7 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 
 #define PWMDAC_OUTPUT_PIN   3
 #include <PWMDAC_Synth.h>
-const EnvelopeParam DEFAULT_ENV_PARAM = {4, 10, 128, 8};
+const EnvelopeParam DEFAULT_ENV_PARAM = EnvelopeParam(4, 10, 128, 8);
 PWMDAC_CREATE_INSTANCE(sineWavetable, PWMDAC_SINE_WAVE, DEFAULT_ENV_PARAM);
 
 void HandleNoteOn(byte channel, byte pitch, byte velocity) { 
