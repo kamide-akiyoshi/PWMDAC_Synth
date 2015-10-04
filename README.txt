@@ -56,7 +56,7 @@ PWMDAC_Synth が現れることを確認してください。
 	// 初期波形（波形テーブル変数名、波形生成マクロ、エンベロープ初期値）を指定し、
 	// 最低限必要な実体（インスタンス）を生成します。
 	//
-	const EnvelopeParam DEFAULT_ENV_PARAM = {4, 10, 128, 8};
+	const EnvelopeParam DEFAULT_ENV_PARAM = EnvelopeParam(4, 10, 128, 8);
 	PWMDAC_CREATE_INSTANCE(sawtoothWavetable, PWMDAC_SAWTOOTH_WAVE, DEFAULT_ENV_PARAM);
 	//
 	// 初期波形以外の波形テーブルの実体を、必要な分だけ定義します。
