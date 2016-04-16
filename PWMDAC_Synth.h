@@ -1,5 +1,5 @@
 //
-// PWM DAC Synthesizer ver.20151003
+// PWM DAC Synthesizer ver.20160416
 //  by Akiyoshi Kamide (Twitter: @akiyoshi_kamide)
 //  http://kamide.b.osdn.me/pwmdac_synth_lib/
 //  https://osdn.jp/users/kamide/pf/PWMDAC_Synth/
@@ -84,11 +84,8 @@ class MidiChannel {
     PROGMEM const byte *wavetable;
     EnvelopeParam env_param;
     MidiChannel(PROGMEM const byte *wavetable, const EnvelopeParam env_param) {
-      modulation = 0;
+      resetAllControllers();
       rpns[LSB] = rpns[MSB] = UCHAR_MAX;
-      pitch_bend_sensitivity = 2;
-      pitch_bend = 0;
-      pitch_rate = 1.0;
       this->env_param = env_param;
       this->wavetable = wavetable;
     }
@@ -107,6 +104,12 @@ class MidiChannel {
       updatePitchRate();
       return true;
     }
+    void resetAllControllers() {
+      modulation = 0;
+      pitch_bend = 0;
+      pitch_rate = 1.0;
+      pitch_bend_sensitivity = 2;
+    }
     void controlChange(byte number, byte value) {
       switch(number) {
         case 1: modulation = value; break;
@@ -115,6 +118,7 @@ class MidiChannel {
           break;
         case 100: rpns[LSB] = value; break;
         case 101: rpns[MSB] = value; break;
+        case 121: resetAllControllers(); break;
       }
     }
 };
@@ -139,6 +143,7 @@ class VoiceStatus {
   public:
     AdsrStatus getAdsrStatus() const { return adsr; }
     boolean isSoundOn() { return adsr > ADSR_OFF; }
+    boolean isNoteOn()  { return adsr > ADSR_RELEASE; }
     boolean isNoteOn(byte note) { return this->note == note && adsr > ADSR_RELEASE; }
     MidiChannel *getChannel() const { return channel; }
     byte getNote() const { return note; }
@@ -158,6 +163,11 @@ class VoiceStatus {
       adsr = ADSR_ATTACK;
     }
     void release() { adsr = ADSR_RELEASE; }
+    void reset(MidiChannel *cp = NULL) {
+      adsr = ADSR_OFF; volume.v16 = 0; note = UCHAR_MAX;
+      phase.v32 = dphase32.real = dphase32.moffset = dphase32.bended = 0L;
+      channel = cp;
+    }
     void update(int modulation_offset) {
       updateModulationStatus(modulation_offset);
       updateEnvelopeStatus();
@@ -184,11 +194,6 @@ class VoiceStatus {
     MidiChannel *channel;
     byte note;    // 0..127
     AdsrStatus adsr;
-    void reset(MidiChannel *cp = NULL) {
-      adsr = ADSR_OFF; volume.v16 = 0; note = UCHAR_MAX;
-      phase.v32 = dphase32.real = dphase32.moffset = dphase32.bended = 0L;
-      channel = cp;
-    }
     void updateModulationStatus(char modulation_offset) {
       if( channel->modulation <= 0x10 ) {
         if( dphase32.moffset == 0 ) return;
@@ -332,6 +337,14 @@ class PWMDACSynth {
     }
     static void controlChange(byte channel, byte number, byte value) {
       getChannel(channel)->controlChange(number, value);
+      switch(number) {
+        case 120: // All sound off
+          EACH_VOICE(v) if( v->isSoundOn() ) v->reset();
+          break;
+        case 123: // All notes off
+          EACH_VOICE(v) if( v->isNoteOn() ) v->release();
+          break; 
+      }
     }
     static MidiChannel *getChannel(char channel) { return channels + (channel - 1); }
     static char getChannel(MidiChannel *cp) { return (cp - channels) + 1; }
