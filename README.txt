@@ -1,7 +1,7 @@
 
 [PWMDAC_Synth - PWM DAC synthesizer library for Arduino]
 
-ver.20160416
+ver.20160418
 
 Arduinoで動作する簡易シンセサイザライブラリです。
 
@@ -53,19 +53,25 @@ PWMDAC_Synth が現れることを確認してください。
 
 	#include <PWMDAC_Synth.h>
 	//
-	// 初期波形（波形テーブル変数名、波形生成マクロ、エンベロープ初期値）を指定し、
-	// 最低限必要な実体（インスタンス）を生成します。
-	//
-	const EnvelopeParam DEFAULT_ENV_PARAM = EnvelopeParam(4, 10, 128, 8);
-	PWMDAC_CREATE_INSTANCE(sawtoothWavetable, PWMDAC_SAWTOOTH_WAVE, DEFAULT_ENV_PARAM);
-	//
-	// 初期波形以外の波形テーブルの実体を、必要な分だけ定義します。
+	// 波形テーブルを、必要な分だけ定義します。
 	// （不要な波形を定義しないようにすることで、プログラムメモリ領域の節約になります）
 	//
-	PWMDAC_ADDITIONAL_WAVETABLE(squareWavetable, PWMDAC_SQUARE_WAVE);
-	PWMDAC_ADDITIONAL_WAVETABLE(triangleWavetable, PWMDAC_TRIANGLE_WAVE);
-	PWMDAC_ADDITIONAL_WAVETABLE(sineWavetable, PWMDAC_SINE_WAVE);
-	PWMDAC_ADDITIONAL_WAVETABLE(shepardToneSineWavetable, PWMDAC_SHEPARD_TONE);
+	PWMDAC_CREATE_WAVETABLE(squareWavetable, PWMDAC_SQUARE_WAVE);
+	PWMDAC_CREATE_WAVETABLE(triangleWavetable, PWMDAC_TRIANGLE_WAVE);
+	PWMDAC_CREATE_WAVETABLE(sineWavetable, PWMDAC_SINE_WAVE);
+	PWMDAC_CREATE_WAVETABLE(shepardToneSineWavetable, PWMDAC_SHEPARD_TONE);
+	PWMDAC_CREATE_WAVETABLE(sawtoothWavetable, PWMDAC_SAWTOOTH_WAVE);
+	//
+	// 波形とエンベロープパラメータ（ADSR）を Instrument 構造体に束ねて
+	// プログラムメモリ領域に音色データを生成します。
+	// 内側の {} にはADSRを逆順で指定します（0～15）。
+	//
+	PROGMEM const Instrument instrument = {sawtoothWavetable, {9, 0, 11, 4}};
+	//
+	// 生成した音色を指定してPWMDAC_Synthの実体（インスタンス）を生成します。
+	// MIDIチャンネル1～16がすべてこの音色に初期化されます。
+	//
+	PWMDAC_CREATE_INSTANCE(&instrument);
 
 	setup() {
 		PWMDACSynth::setup(); // 初期化（必須）
@@ -159,10 +165,8 @@ PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
 	・sustain_level - サスティンレベル（減衰が止まったあと維持する音量）
 	・release_time - リリース時間（大きいほどノートオフ後の減衰がゆっくり）
 
-	時間の値は 0～15 の範囲です。
+	値は 0～15 の範囲です。
 	実時間は loop() 内で update() を呼び出す頻度によって変わります。
-
-	サスティンレベルは 0～255 の範囲です。
 
 	各ADSRパラメータ値へのポインタは getParam() メソッドで取得できます。
 
@@ -176,6 +180,10 @@ PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
 	かつ最大音量の出るような計算式になっています。
 	これに習って自分で波形を定義すれば、それを指定して
 	独自の音色を生み出すことも可能です。
+
+	プログラムメモリ領域に Instrument 構造体定数を作って、
+	それを指定することで音色を変更することもできます。
+	MIDIのプログラムチェンジの実装にはこの方法がおすすめです。
 
 
 ●ユーティリティ
