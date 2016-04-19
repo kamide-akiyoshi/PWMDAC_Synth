@@ -1,5 +1,5 @@
 //
-// PWM DAC Synthesizer ver.20160418
+// PWM DAC Synthesizer ver.20160419
 //  by Akiyoshi Kamide (Twitter: @akiyoshi_kamide)
 //  http://kamide.b.osdn.me/pwmdac_synth_lib/
 //  https://osdn.jp/users/kamide/pf/PWMDAC_Synth/
@@ -47,7 +47,7 @@
 #define PWMDAC_SINE_WAVE(x)     (PWMDAC_MAX_VOLUME_SINE_WAVE(x) / PWMDAC_POLYPHONY)
 #define PWMDAC_SHEPARD_TONE(x)  (( \
   SINPI(x,128) + SINPI(x,64) + SINPI(x,32) + SINPI(x,16) + \
-  SINPI(x,8)   + SINPI(x,4)  + SINPI(x,2) + cos(PI * (x)) + 8 ) * 16 / PWMDAC_POLYPHONY)
+  SINPI(x,8)   + SINPI(x,4)  + SINPI(x,2) + 7 ) * 18.22 / PWMDAC_POLYPHONY)
 
 #define PWMDAC_CREATE_WAVETABLE(table, function) PROGMEM const byte table[] = ARRAY256(function)
 
@@ -61,11 +61,14 @@ typedef struct _Instrument {
 class EnvelopeParam {
   public:
     EnvelopeParam() { }
+    EnvelopeParam(PROGMEM const byte *envelope) {
+      setParam(envelope);
+    }
     EnvelopeParam(byte attack_time, byte decay_time, byte sustain_level, byte release_time) {
-      *getParam(ADSR_ATTACK) = attack_time;
-      *getParam(ADSR_DECAY) = decay_time;
-      *getParam(ADSR_SUSTAIN) = sustain_level;
-      *getParam(ADSR_RELEASE) = release_time;
+      *getParam(ADSR_ATTACK) = attack_time;     // 0..15
+      *getParam(ADSR_DECAY) = decay_time;       // 0..15
+      *getParam(ADSR_SUSTAIN) = sustain_level;  // 0..255
+      *getParam(ADSR_RELEASE) = release_time;   // 0..15
     }
     byte *getParam(AdsrStatus adsr) {
       return param + (byte)adsr - 1;
@@ -85,9 +88,9 @@ class MidiChannel {
     byte pitch_bend_sensitivity; // +/- max semitones 0 .. 24(= 2 octaves)
     double pitch_rate; // positive value only: low .. 1.0(center) .. high
     void updatePitchRate() {
-      pitch_rate = pow( 2,
-        (float)pitch_bend_sensitivity/(float)12 *
-        (float)pitch_bend/(float)8191 );
+      long b = pitch_bend;
+      b *= pitch_bend_sensitivity;
+      pitch_rate = pow( 2, (double)b / (double)(8192L * 12) );
     }
   public:
     byte modulation;  // 0 ... 127 (unsigned 7 bit - MSB only)

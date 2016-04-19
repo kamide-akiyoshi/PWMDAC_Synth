@@ -1,7 +1,7 @@
 
 [PWMDAC_Synth - PWM DAC synthesizer library for Arduino]
 
-ver.20160418
+ver.20160419
 
 Arduinoで動作する簡易シンセサイザライブラリです。
 
@@ -56,15 +56,15 @@ PWMDAC_Synth が現れることを確認してください。
 	// 波形テーブルを、必要な分だけ定義します。
 	// （不要な波形を定義しないようにすることで、プログラムメモリ領域の節約になります）
 	//
-	PWMDAC_CREATE_WAVETABLE(squareWavetable, PWMDAC_SQUARE_WAVE);
-	PWMDAC_CREATE_WAVETABLE(triangleWavetable, PWMDAC_TRIANGLE_WAVE);
-	PWMDAC_CREATE_WAVETABLE(sineWavetable, PWMDAC_SINE_WAVE);
-	PWMDAC_CREATE_WAVETABLE(shepardToneSineWavetable, PWMDAC_SHEPARD_TONE);
-	PWMDAC_CREATE_WAVETABLE(sawtoothWavetable, PWMDAC_SAWTOOTH_WAVE);
+	PWMDAC_CREATE_WAVETABLE(squareWavetable, PWMDAC_SQUARE_WAVE);      // 矩形波
+	PWMDAC_CREATE_WAVETABLE(triangleWavetable, PWMDAC_TRIANGLE_WAVE);  // 三角波
+	PWMDAC_CREATE_WAVETABLE(sineWavetable, PWMDAC_SINE_WAVE);          // 正弦波
+	PWMDAC_CREATE_WAVETABLE(shepardToneSineWavetable, PWMDAC_SHEPARD_TONE);  // シェパードトーン（無限音階）
+	PWMDAC_CREATE_WAVETABLE(sawtoothWavetable, PWMDAC_SAWTOOTH_WAVE);  // のこぎり波
 	//
 	// 波形とエンベロープパラメータ（ADSR）を Instrument 構造体に束ねて
 	// プログラムメモリ領域に音色データを生成します。
-	// 内側の {} にはADSRを逆順で指定します（0～15）。
+	// 内側の {} にはADSRの値を逆順で指定します（値の範囲については後述の「●音色変更」を参照）。
 	//
 	PROGMEM const Instrument instrument = {sawtoothWavetable, {9, 0, 11, 4}};
 	//
@@ -165,7 +165,7 @@ PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
 	・sustain_level - サスティンレベル（減衰が止まったあと維持する音量）
 	・release_time - リリース時間（大きいほどノートオフ後の減衰がゆっくり）
 
-	値は 0～15 の範囲です。
+	値の範囲は sustain_level が 0～255、それ以外は 0～15 です。
 	実時間は loop() 内で update() を呼び出す頻度によって変わります。
 
 	各ADSRパラメータ値へのポインタは getParam() メソッドで取得できます。
@@ -184,6 +184,9 @@ PWMDACSynth::update() は、減衰などのADSRエンベロープ形状の
 	プログラムメモリ領域に Instrument 構造体定数を作って、
 	それを指定することで音色を変更することもできます。
 	MIDIのプログラムチェンジの実装にはこの方法がおすすめです。
+	現在のバージョンでは、プログラムチェンジ対応に伴い、
+	エンベロープの初期化に Instrument 構造体定数を使うインターフェースに
+	してRAMへの展開を最小限に抑えられるようにしました。
 
 
 ●ユーティリティ
