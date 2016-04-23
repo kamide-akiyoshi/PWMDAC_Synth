@@ -1,5 +1,5 @@
 //
-// PWM DAC Synthesizer ver.20160419
+// PWM DAC Synthesizer ver.20160423
 //  by Akiyoshi Kamide (Twitter: @akiyoshi_kamide)
 //  http://kamide.b.osdn.me/pwmdac_synth_lib/
 //  https://osdn.jp/users/kamide/pf/PWMDAC_Synth/
@@ -97,12 +97,12 @@ class MidiChannel {
     PROGMEM const byte *wavetable;
     EnvelopeParam envelope;
     MidiChannel(PROGMEM const Instrument *instrument) {
-      programChange(instrument);
-      reset();
+      reset(instrument);
     }
-    void reset() {
+    void reset(PROGMEM const Instrument *instrument) {
       resetAllControllers();
       rpns[LSB] = rpns[MSB] = UCHAR_MAX;
+      programChange(instrument);
     }
     double getPitchRate() const { return pitch_rate; }
     int getPitchBend() const { return pitch_bend; }
@@ -333,6 +333,7 @@ class PWMDACSynth {
 #endif
     }
 #define EACH_VOICE(p) for(VoiceStatus *(p)=voices; (p)<= voices + (PWMDAC_POLYPHONY - 1); (p)++)
+#define EACH_CHANNEL(c) for(MidiChannel *(c)=channels; (c)<= channels + (NumberOf(channels) - 1); (c)++)
     inline static void updatePulseWidth() {
       unsigned int pw = 0;
       EACH_VOICE(v) pw += v->nextPulseWidth();
@@ -366,7 +367,10 @@ class PWMDACSynth {
           break; 
       }
     }
-    static void systemReset() { EACH_VOICE(v) v->reset(); }
+    static void systemReset() {
+      EACH_VOICE(v) v->reset();
+      EACH_CHANNEL(c) c->reset(defaultInstrument);
+    }
     static MidiChannel *getChannel(char channel) { return channels + (channel - 1); }
     static char getChannel(MidiChannel *cp) { return (cp - channels) + 1; }
     static byte musicalMod12(char);
@@ -382,6 +386,7 @@ class PWMDACSynth {
       return note;
     }
   protected:
+    static PROGMEM const Instrument * const defaultInstrument;
     static MidiChannel channels[16];
     static VoiceStatus voices[PWMDAC_POLYPHONY];
     static PROGMEM const byte maxVolumeSineWavetable[];
@@ -407,5 +412,6 @@ class PWMDACSynth {
   ISR(PWMDAC_OVF_vect) { PWMDACSynth::updatePulseWidth(); } \
   VoiceStatus PWMDACSynth::voices[PWMDAC_POLYPHONY]; \
   PWMDAC_CREATE_WAVETABLE(PWMDACSynth::maxVolumeSineWavetable, PWMDAC_MAX_VOLUME_SINE_WAVE); \
+  PROGMEM const Instrument * const PWMDACSynth::defaultInstrument = instrument; \
   MidiChannel PWMDACSynth::channels[16] = MidiChannel(instrument);
 
