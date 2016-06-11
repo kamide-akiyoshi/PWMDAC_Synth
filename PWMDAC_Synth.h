@@ -1,5 +1,5 @@
 //
-// PWM DAC Synthesizer ver.20160423
+// PWM DAC Synthesizer ver.20160611
 //  by Akiyoshi Kamide (Twitter: @akiyoshi_kamide)
 //  http://kamide.b.osdn.me/pwmdac_synth_lib/
 //  https://osdn.jp/users/kamide/pf/PWMDAC_Synth/
@@ -83,36 +83,44 @@ class EnvelopeParam {
 class MidiChannel {
   protected:
     enum ByteSignificance {LSB, MSB}; // AVR is Little Endian
-    byte rpns[2]; // RPN (Registered Parameter Number)
-    int pitch_bend; // Signed 14bit value : -8192(lowest) .. 0(center) .. +8191(highest)
+    static const byte RPN_Null = UCHAR_MAX;
+    byte RPN[2]; // RPN (Registered Parameter Number) [LSB MSB]
+    byte *data_entry_source; // RPN or NRPN(Non-Registered Parameter Number)
     byte pitch_bend_sensitivity; // +/- max semitones 0 .. 24(= 2 octaves)
-    double pitch_rate; // positive value only: low .. 1.0(center) .. high
+    int pitch_bend; // Signed 14bit : -8192(lowest) .. 0(center) .. +8191(highest)
+    double pitch_rate;
     void updatePitchRate() {
-      long b = pitch_bend;
-      b *= pitch_bend_sensitivity;
-      pitch_rate = pow( 2, (double)b / (double)(8192L * 12) );
+      //  98304 : 1 octave (== 12 semitones) high
+      //   8192 : 1 semitone high
+      //      0 : original
+      //  -8192 : 1 semitone low
+      // -98304 : 1 octave low
+      long value8192_per_semitone = static_cast<long>(pitch_bend) * pitch_bend_sensitivity;
+      // 2.0 : 1 octave high
+      // 1.0 : original
+      // 0.5 : 1 octave low
+      pitch_rate = pow( 2, static_cast<double>(value8192_per_semitone) / 98304 );
     }
   public:
     byte modulation;  // 0 ... 127 (unsigned 7 bit - MSB only)
     PROGMEM const byte *wavetable;
     EnvelopeParam envelope;
-    MidiChannel(PROGMEM const Instrument *instrument) {
-      reset(instrument);
-    }
+    MidiChannel(PROGMEM const Instrument *instrument) { reset(instrument); }
     void reset(PROGMEM const Instrument *instrument) {
       resetAllControllers();
-      rpns[LSB] = rpns[MSB] = UCHAR_MAX;
+      RPN[LSB] = RPN[MSB] = RPN_Null;
+      data_entry_source = NULL;
       programChange(instrument);
     }
     double getPitchRate() const { return pitch_rate; }
     int getPitchBend() const { return pitch_bend; }
-    byte getPitchBendSensitivity() const { return pitch_bend_sensitivity; }
     boolean pitchBendChange(int bend) {
-      if( (pitch_bend & 0xFFF0) == (bend & 0xFFF0) ) return false;
+      if( abs(bend - pitch_bend) < 16 ) return false;
       pitch_bend = bend;
       updatePitchRate();
       return true;
     }
+    byte getPitchBendSensitivity() const { return pitch_bend_sensitivity; }
     boolean pitchBendSensitivityChange(byte value) {
       if ( pitch_bend_sensitivity == value ) return false;
       pitch_bend_sensitivity = value;
@@ -133,10 +141,18 @@ class MidiChannel {
       switch(number) {
         case 1: modulation = value; break;
         case 6: // RPN/NRPN Data Entry
-          if ( rpns[LSB] == 0 && rpns[MSB] == 0 ) pitchBendSensitivityChange(value);
+          if ( data_entry_source == NULL ) break;
+          if ( data_entry_source[LSB] == 0 && data_entry_source[MSB] == 0 ) {
+            pitchBendSensitivityChange(value);
+          }
+          data_entry_source = NULL;
           break;
-        case 100: rpns[LSB] = value; break;
-        case 101: rpns[MSB] = value; break;
+        // case  96: break; // Data Increment
+        // case  97: break; // Data Decrement
+        case  98: // NRPN LSB
+        case  99: data_entry_source = NULL; break; // NRPN MSB
+        case 100: (data_entry_source = RPN)[LSB] = value; break;
+        case 101: (data_entry_source = RPN)[MSB] = value; break;
         case 121: resetAllControllers(); break;
       }
     }
@@ -197,9 +213,13 @@ class VoiceStatus {
     }
     void updatePitch() {
       static PROGMEM const unsigned long phase_speed_table[] = ARRAY128(PHASE_SPEED_OF);
-      dphase32.real = (
-        dphase32.bended = pgm_read_dword(phase_speed_table + note) * channel->getPitchRate()
-        ) + dphase32.moffset;
+      unsigned long phase_speed = pgm_read_dword(phase_speed_table + note);
+      if( channel->getPitchBend() == 0 ) {
+        dphase32.bended = phase_speed;
+      } else {
+        dphase32.bended = phase_speed * channel->getPitchRate();
+      }
+      dphase32.real = dphase32.bended + dphase32.moffset;
     }
   protected:
     PROGMEM const byte *wavetable;
@@ -224,8 +244,8 @@ class VoiceStatus {
         dphase32.real = dphase32.bended;
         return;
       }
-      dphase32.real = dphase32.bended + (
-        dphase32.moffset = (dphase32.real >> 19) * channel->modulation * (int)modulation_offset );
+      dphase32.moffset = (dphase32.real >> 19) * channel->modulation * modulation_offset;
+      dphase32.real = dphase32.bended + dphase32.moffset;
     }
     EnvelopeParam *getEnvelope() { return &(channel->envelope); }
     void updateEnvelopeStatus() {
@@ -348,7 +368,7 @@ class PWMDACSynth {
       EACH_VOICE(v) if( v->isNoteOn(pitch,getChannel(channel)) ) v->release();
     }
     static void noteOn(byte channel, byte pitch, byte velocity) {
-      selectVoiceToAttack(getChannel(channel),pitch)->attack(pitch);
+      getVoiceToAttack(getChannel(channel),pitch)->attack(pitch);
     }
     static void pitchBend(byte channel, int bend) {
       MidiChannel *cp = getChannel(channel);
@@ -390,7 +410,7 @@ class PWMDACSynth {
     static MidiChannel channels[16];
     static VoiceStatus voices[PWMDAC_POLYPHONY];
     static PROGMEM const byte maxVolumeSineWavetable[];
-    static VoiceStatus *selectVoiceToAttack(MidiChannel *channel, byte note) {
+    static VoiceStatus *getVoiceToAttack(MidiChannel *channel, byte note) {
       EACH_VOICE(v) if( v->isNoteOn(note,channel) ) return v;
       struct {
         unsigned int temperature = UINT_MAX;
