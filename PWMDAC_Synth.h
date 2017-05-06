@@ -1,5 +1,5 @@
 //
-// PWM DAC Synthesizer ver.20160611
+// PWM DAC Synthesizer ver.20170506
 //  by Akiyoshi Kamide (Twitter: @akiyoshi_kamide)
 //  http://kamide.b.osdn.me/pwmdac_synth_lib/
 //  https://osdn.jp/users/kamide/pf/PWMDAC_Synth/
@@ -115,7 +115,8 @@ class MidiChannel {
     double getPitchRate() const { return pitch_rate; }
     int getPitchBend() const { return pitch_bend; }
     boolean pitchBendChange(int bend) {
-      if( abs(bend - pitch_bend) < 16 ) return false;
+      int diff = bend - pitch_bend;
+      if( diff < 16 && diff > -16 ) return false;
       pitch_bend = bend;
       updatePitchRate();
       return true;
@@ -181,7 +182,7 @@ class VoiceStatus {
     MidiChannel *getChannel() const { return channel; }
     boolean isSoundOn() { return adsr > ADSR_OFF; }
     boolean isSoundOn(MidiChannel *cp) { return isSoundOn() && isForChannel(cp); }
-    boolean isNoteOn()  { return adsr > ADSR_RELEASE; }
+    boolean isNoteOn() { return adsr > ADSR_RELEASE; }
     boolean isNoteOn(MidiChannel *cp) { return isNoteOn() && isForChannel(cp); }
     boolean isNoteOn(byte note) { return this->note == note && isNoteOn(); }
     boolean isNoteOn(byte note, MidiChannel *cp) { return isNoteOn(note) && isForChannel(cp); }
@@ -189,9 +190,12 @@ class VoiceStatus {
     unsigned int getVolume16() const { return volume.v16; }
     inline byte getVolume8() const { return volume.v8[sizeof(volume.v8) - 1]; }
     inline unsigned int nextPulseWidth() { return getVolume8() * nextWavePoint(); }
-    unsigned int getTemperature() {
-      unsigned int t = volume.v16 >> 1;
-      return adsr == ADSR_ATTACK ? UINT_MAX - t : t;
+    static const byte HIGHEST_PRIORITY = UCHAR_MAX;
+    static const byte LOWEST_PRIORITY = 0;
+    byte getPriority() {
+      byte t = getVolume8() >> 1;
+      if( adsr == ADSR_ATTACK ) t = HIGHEST_PRIORITY - t;
+      return t;
     }
     VoiceStatus() { reset(); }
     void setChannel(MidiChannel *cp) { if( ! isForChannel(cp) ) reset(cp); }
@@ -202,11 +206,7 @@ class VoiceStatus {
       adsr = ADSR_ATTACK;
     }
     void release() { adsr = ADSR_RELEASE; }
-    void reset(MidiChannel *cp = NULL) {
-      adsr = ADSR_OFF; volume.v16 = 0; note = UCHAR_MAX;
-      phase.v32 = dphase32.real = dphase32.moffset = dphase32.bended = 0L;
-      channel = cp;
-    }
+    void reset(MidiChannel *cp = NULL) { resetNote(); channel = cp; }
     void update(int modulation_offset) {
       updateModulationStatus(modulation_offset);
       updateEnvelopeStatus();
@@ -237,6 +237,10 @@ class VoiceStatus {
     MidiChannel *channel;
     byte note; // 0..127
     AdsrStatus adsr;
+    void resetNote() {
+      adsr = ADSR_OFF; volume.v16 = 0; note = UCHAR_MAX;
+      phase.v32 = dphase32.real = dphase32.moffset = dphase32.bended = 0L;
+    }
     void updateModulationStatus(char modulation_offset) {
       if( channel->modulation <= 0x10 ) {
         if( dphase32.moffset == 0 ) return;
@@ -368,7 +372,7 @@ class PWMDACSynth {
       EACH_VOICE(v) if( v->isNoteOn(pitch,getChannel(channel)) ) v->release();
     }
     static void noteOn(byte channel, byte pitch, byte velocity) {
-      getVoiceToAttack(getChannel(channel),pitch)->attack(pitch);
+      assignVoice(getChannel(channel),pitch)->attack(pitch);
     }
     static void pitchBend(byte channel, int bend) {
       MidiChannel *cp = getChannel(channel);
@@ -410,20 +414,18 @@ class PWMDACSynth {
     static MidiChannel channels[16];
     static VoiceStatus voices[PWMDAC_POLYPHONY];
     static PROGMEM const byte maxVolumeSineWavetable[];
-    static VoiceStatus *getVoiceToAttack(MidiChannel *channel, byte note) {
-      EACH_VOICE(v) if( v->isNoteOn(note,channel) ) return v;
-      struct {
-        unsigned int temperature = UINT_MAX;
-        VoiceStatus *voice = NULL;
-      } coldest;
-      unsigned int temperature;
+    static VoiceStatus *assignVoice(MidiChannel *channel, byte note) {
+      EACH_VOICE(v) if( v->isNoteOn(note, channel) ) return v;
+      VoiceStatus *lowest_priority_voice = voices;
+      byte lowest_priority = VoiceStatus::HIGHEST_PRIORITY;
       EACH_VOICE(v) {
-        if( (temperature = v->getTemperature()) > coldest.temperature ) continue;
-        coldest.temperature = temperature;
-        coldest.voice = v;
+        byte priority = v->getPriority();
+        if( priority > lowest_priority ) continue;
+        lowest_priority = priority;
+        lowest_priority_voice = v;
       }
-      coldest.voice->setChannel(channel);
-      return coldest.voice;
+      lowest_priority_voice->setChannel(channel);
+      return lowest_priority_voice;
     }
 #undef EACH_VOICE
 };
