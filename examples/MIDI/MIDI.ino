@@ -4,8 +4,13 @@
 #include <MIDI.h>
 MIDI_CREATE_DEFAULT_INSTANCE();
 
+// Put your configuration here (before including PWMDAC_Synth.h)
 #define MIDI_ENABLE_PIN     2
 #define PWMDAC_OUTPUT_PIN   3
+
+// Comment this #define out if you don't need to use MIDI channel priority feature
+//#define PWMDAC_CHANNEL_PRIORITY_SUPPORT
+
 #include <PWMDAC_Synth.h>
 
 #define DRUM_MIDI_CHANNEL 10
@@ -315,6 +320,10 @@ void setup() {
   pinMode(MIDI_ENABLE_PIN,OUTPUT);
   digitalWrite(MIDI_ENABLE_PIN,HIGH); // enable MIDI port
   PWMDACSynth::getChannel(DRUM_MIDI_CHANNEL)->programChange(&DRUM_INSTRUMENT);
+#if defined(PWMDAC_CHANNEL_PRIORITY_SUPPORT)
+  // To set higher priority for melody part on MIDI channel 1
+  PWMDACSynth::getChannel(1)->setPriority(0xC0);
+#endif
 }
 
 void loop() {

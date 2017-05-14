@@ -1,5 +1,5 @@
 //
-// PWM DAC Synthesizer ver.20170506
+// PWM DAC Synthesizer ver.20170514
 //  by Akiyoshi Kamide (Twitter: @akiyoshi_kamide)
 //  http://kamide.b.osdn.me/pwmdac_synth_lib/
 //  https://osdn.jp/users/kamide/pf/PWMDAC_Synth/
@@ -102,16 +102,29 @@ class MidiChannel {
       pitch_rate = pow( 2, static_cast<double>(value8192_per_semitone) / 98304 );
     }
   public:
+#if defined(PWMDAC_CHANNEL_PRIORITY_SUPPORT)
+    // 0xFF:Lowest priority (default)
+    // 0x00:Highest priority (The channel occupies a voice even non-zero lowest volume)
+    byte priority_volume_threshold;
+#endif
     byte modulation;  // 0 ... 127 (unsigned 7 bit - MSB only)
     PROGMEM const byte *wavetable;
     EnvelopeParam envelope;
-    MidiChannel(PROGMEM const Instrument *instrument) { reset(instrument); }
+    MidiChannel(PROGMEM const Instrument *instrument) {
+#if defined(PWMDAC_CHANNEL_PRIORITY_SUPPORT)
+      setPriority(0);
+#endif
+      reset(instrument);
+    }
     void reset(PROGMEM const Instrument *instrument) {
       resetAllControllers();
       RPN[LSB] = RPN[MSB] = RPN_Null;
       data_entry_source = NULL;
       programChange(instrument);
     }
+#if defined(PWMDAC_CHANNEL_PRIORITY_SUPPORT)
+    void setPriority(byte priority) { this->priority_volume_threshold = ~priority; }
+#endif
     double getPitchRate() const { return pitch_rate; }
     int getPitchBend() const { return pitch_bend; }
     boolean pitchBendChange(int bend) {
@@ -195,6 +208,13 @@ class VoiceStatus {
     byte getPriority() {
       byte t = getVolume8() >> 1;
       if( adsr == ADSR_ATTACK ) t = HIGHEST_PRIORITY - t;
+#if defined(PWMDAC_CHANNEL_PRIORITY_SUPPORT)
+      if( channel != NULL && t > channel->priority_volume_threshold ) {
+        t >>= 1; t |= 0x80;
+      } else {
+        t >>= 1;
+      }
+#endif
       return t;
     }
     VoiceStatus() { reset(); }
