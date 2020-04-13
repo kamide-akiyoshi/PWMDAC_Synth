@@ -1,17 +1,18 @@
 //
-// PWM DAC Synthesizer ver.20200405
+// PWM DAC Synthesizer ver.20200413
 //  by Akiyoshi Kamide (Twitter: @akiyoshi_kamide)
 //  http://kamide.b.osdn.me/pwmdac_synth_lib/
 //  https://osdn.jp/users/kamide/pf/PWMDAC_Synth/
 //
 #pragma once
+#pragma GCC push_options
+#pragma GCC optimize ("-O3")
 
 #include <Arduino.h>
 #include <wiring_private.h>
 #include <limits.h>
 
 #define NumberOf(array) (sizeof(array)/sizeof(*(array)))
-#define HighestElementOf(array) ((array)[NumberOf(array)-1])
 #define cbi16(sfr, bit) (_SFR_WORD(sfr) &= ~_BV(bit))
 #define sbi16(sfr, bit) (_SFR_WORD(sfr) |= _BV(bit))
 
@@ -56,6 +57,52 @@
     ) / (8 * PWMDAC_POLYPHONY) ))
 
 #define PWMDAC_CREATE_WAVETABLE(table, function) PROGMEM const byte table[] = ARRAY256(function)
+
+// [Phase-correct PWM dual-slope]
+//    TCNTn value changes to:
+//       00(BOTTOM) 01 02 03 ... FC FD FE
+//       FF(TOP)    FE FD FC ... 03 02 01
+//    -> # of values = 0xFF * 2 = 510 (NOT 512)
+//
+// ISR() call interval = (# of values) / F_CPU(16MHz) = 31.875us
+//
+// [MIDI Tuning Standard]
+// http://en.wikipedia.org/wiki/MIDI_Tuning_Standard
+//    fn(d) = 440 Hz * 2^( (d - 69) / 12 )  MIDI note # d = 0..127
+//
+#define PHASE_SPEED_OF(note_number) (static_cast<unsigned long>( \
+  pow( 2, static_cast<double>(note_number - 69)/12 + (sizeof(unsigned long) * 8 + 1) ) \
+  * PWMDAC_NOTE_A_FREQUENCY * 0xFF / F_CPU ))
+
+// PWM Port macros
+#if PWMDAC_OUTPUT_PIN == 6 || PWMDAC_OUTPUT_PIN == 5
+// In Arduino, TIMER0 has been reserved by wiring.c in Arduino core,
+//   so defining PWMDAC_OUTPUT_PIN = 5 or 6 causes compile error
+//   (multiple definition of `__vector_16')
+#define PWMDAC_USE_TIMER0
+#define PWMDAC_OVF_vect TIMER0_OVF_vect
+#if PWMDAC_OUTPUT_PIN == 6
+#define PWMDAC_OCR OCR0A
+#else
+#define PWMDAC_OCR OCR0B
+#endif
+#elif PWMDAC_OUTPUT_PIN == 9 || PWMDAC_OUTPUT_PIN == 10
+#define PWMDAC_USE_TIMER1
+#define PWMDAC_OVF_vect TIMER1_OVF_vect
+#if PWMDAC_OUTPUT_PIN == 9
+#define PWMDAC_OCR OCR1A  // OC1A maybe used as MOSI for SPI
+#else
+#define PWMDAC_OCR OCR1B  // OC1B maybe used as SS for SPI
+#endif
+#elif PWMDAC_OUTPUT_PIN == 11 || PWMDAC_OUTPUT_PIN == 3
+#define PWMDAC_USE_TIMER2
+#define PWMDAC_OVF_vect TIMER2_OVF_vect
+#if PWMDAC_OUTPUT_PIN == 11
+#define PWMDAC_OCR OCR2A
+#else
+#define PWMDAC_OCR OCR2B  // OC2B maybe used as INT1
+#endif
+#endif
 
 enum AdsrParam : byte {
   ADSR_RELEASE_VALUE, // 0..15
@@ -164,51 +211,6 @@ class MidiChannel {
     }
 };
 
-#if PWMDAC_OUTPUT_PIN == 6 || PWMDAC_OUTPUT_PIN == 5
-// In Arduino, TIMER0 has been reserved by wiring.c in Arduino core,
-//   so defining PWMDAC_OUTPUT_PIN = 5 or 6 causes compile error
-//   (multiple definition of `__vector_16')
-#define PWMDAC_USE_TIMER0
-#define PWMDAC_OVF_vect TIMER0_OVF_vect
-#if PWMDAC_OUTPUT_PIN == 6
-#define PWMDAC_OCR OCR0A
-#else
-#define PWMDAC_OCR OCR0B
-#endif
-#elif PWMDAC_OUTPUT_PIN == 9 || PWMDAC_OUTPUT_PIN == 10
-#define PWMDAC_USE_TIMER1
-#define PWMDAC_OVF_vect TIMER1_OVF_vect
-#if PWMDAC_OUTPUT_PIN == 9
-#define PWMDAC_OCR OCR1A  // OC1A maybe used as MOSI for SPI
-#else
-#define PWMDAC_OCR OCR1B  // OC1B maybe used as SS for SPI
-#endif
-#elif PWMDAC_OUTPUT_PIN == 11 || PWMDAC_OUTPUT_PIN == 3
-#define PWMDAC_USE_TIMER2
-#define PWMDAC_OVF_vect TIMER2_OVF_vect
-#if PWMDAC_OUTPUT_PIN == 11
-#define PWMDAC_OCR OCR2A
-#else
-#define PWMDAC_OCR OCR2B  // OC2B maybe used as INT1
-#endif
-#endif
-
-// [Phase-correct PWM dual-slope]
-//    TCNTn value changes to:
-//       00(BOTTOM) 01 02 03 ... FC FD FE
-//       FF(TOP)    FE FD FC ... 03 02 01
-//    -> # of values = 0xFF * 2 = 510 (NOT 512)
-//
-// ISR() call interval = (# of values) / F_CPU(16MHz) = 31.875us
-// 
-// [MIDI Tuning Standard]
-// http://en.wikipedia.org/wiki/MIDI_Tuning_Standard
-//    fn(d) = 440 Hz * 2^( (d - 69) / 12 )  MIDI note # d = 0..127
-//
-#define PHASE_SPEED_OF(note_number) (static_cast<unsigned long>( \
-  pow( 2, static_cast<double>(note_number - 69)/12 + (sizeof(unsigned long) * 8 + 1) ) \
-  * PWMDAC_NOTE_A_FREQUENCY * 0xFF / F_CPU ))
-
 class PWMDACSynth {
   protected:
     static PROGMEM const byte maxVolumeSineWavetable[];
@@ -223,12 +225,26 @@ class PWMDACSynth {
           ADSR_DECAY,
           ADSR_ATTACK
         };
-        union { unsigned long v32; byte v8[4]; } phase;
+        union {
+          unsigned long v32;
+          struct {
+            byte lowest;
+            byte lowest2;
+            byte highest2;
+            byte highest;
+          } v8;
+        } phase;
         unsigned long dphase32_real;     // Real phase speed
         unsigned long dphase32_bended;   // Pitch-bended phase speed
         unsigned long dphase32_original; // Original phase speed
         long dphase32_moffset;           // Modulation pitch offset
-        union { unsigned int v16; byte v8[2]; } volume;
+        union {
+          unsigned int v16;
+          struct {
+            byte low;
+            byte high;
+          } v8;
+        } volume;
         unsigned int dv;      // Diff of volume
         unsigned int sustain; // Volume when ADSR Sustain
         byte note; // 0..127
@@ -242,7 +258,7 @@ class PWMDACSynth {
         static const byte LOWEST_PRIORITY = 0;
         Voice() { allSoundOff(); }
         byte getPriority() const {
-          byte t = HighestElementOf(volume.v8) >> 1;
+          byte t = volume.v8.high >> 1;
           if( adsr_status == ADSR_ATTACK ) t = HIGHEST_PRIORITY - t;
 #if defined(PWMDAC_CHANNEL_PRIORITY_SUPPORT)
           if( channel != nullptr && t > channel->priority_volume_threshold ) {
@@ -295,8 +311,7 @@ class PWMDACSynth {
         }
         unsigned int nextPulseWidth() {
           phase.v32 += dphase32_real;
-          return HighestElementOf(volume.v8) *
-            pgm_read_byte(wavetable + HighestElementOf(phase.v8));
+          return volume.v8.high * pgm_read_byte(wavetable + phase.v8.highest);
         }
         void update(const byte modulation_offset) {
           // Update volume by ADSR envelope
@@ -345,18 +360,8 @@ class PWMDACSynth {
     };
     static Voice voices[PWMDAC_POLYPHONY];
   public:
-    static void __updatePulseWidth() { // Only for ISR()
-      union { unsigned int v16; byte v8[2]; } pw = {0};
-      for( byte i = 0; i < NumberOf(voices); ++i ) pw.v16 += voices[i].nextPulseWidth();
-      PWMDAC_OCR = HighestElementOf(pw.v8);
-    }
-    static void update() { // must be called from your loop() repeatedly
-      static byte modulation_phase = 0;
-      const byte *addr = maxVolumeSineWavetable + modulation_phase++;
-      const byte modulation_offset = pgm_read_byte(addr) - 0x7F;
-      for( byte i = 0; i < NumberOf(voices); ++i ) voices[i].update(modulation_offset);
-    }
-    static void setup() { // must be called from your setup() once
+    static void setup() {
+      // must be called from your setup() once
       pinMode(PWMDAC_OUTPUT_PIN,OUTPUT);
 #ifdef PWMDAC_USE_TIMER1
       // No prescaling
@@ -409,18 +414,19 @@ class PWMDACSynth {
     static void noteOff(const byte channel, const byte pitch, const byte velocity) {
       (void)velocity;
       MidiChannel *cp = getChannel(channel);
-      for( byte i = 0; i < NumberOf(voices); ++i ) voices[i].noteOff(pitch, cp);
+      byte i = NumberOf(voices); while( i > 0 ) voices[--i].noteOff(pitch, cp);
     }
     static void noteOn(const byte channel, const byte pitch, const byte velocity) {
       (void)velocity;
       const MidiChannel * const cp = getChannel(channel);
-      for( byte i = 0; i < NumberOf(voices); ++i )
-        if( voices[i].reAttackIfAssigned(pitch, cp) ) return;
+      byte i = NumberOf(voices);
+      while(i) if( voices[--i].reAttackIfAssigned(pitch, cp) ) return;
       // Search voice to assign
       byte lowest_priority = Voice::HIGHEST_PRIORITY;
       byte lowest_priority_index = 0;
-      for( byte i = 0; i < NumberOf(voices); ++i ) {
-        const byte priority = voices[i].getPriority();
+      i = NumberOf(voices);
+      while(i) {
+        const byte priority = voices[--i].getPriority();
         if( priority > lowest_priority ) continue;
         lowest_priority = priority;
         lowest_priority_index = i;
@@ -430,23 +436,38 @@ class PWMDACSynth {
     static void pitchBend(const byte channel, const int bend) {
       MidiChannel *cp = getChannel(channel);
       if ( ! cp->pitchBendChange(bend) ) return;
-      for( byte i = 0; i < NumberOf(voices); ++i ) voices[i].updatePitch(cp);
+      byte i = NumberOf(voices); while(i) voices[--i].updatePitch(cp);
     }
     static void controlChange(const byte channel, const byte number, const byte value) {
       MidiChannel *cp = getChannel(channel);
       cp->controlChange(number, value);
+      byte i;
       switch(number) {
         case 120: // All sound off
-          for( byte i = 0; i < NumberOf(voices); ++i ) voices[i].allSoundOff(cp);
+          i = NumberOf(voices); while(i) voices[--i].allSoundOff(cp);
           break;
         case 123: // All notes off
-          for( byte i = 0; i < NumberOf(voices); ++i ) voices[i].allNotesOff(cp);
+          i = NumberOf(voices); while(i) voices[--i].allNotesOff(cp);
           break; 
       }
     }
     static void systemReset() {
-      for( byte i = 0; i < NumberOf(voices); ++i ) voices[i].allSoundOff();
-      for( byte i = 0; i < NumberOf(channels); i++ ) channels[i].reset(defaultInstrument);
+      byte i = NumberOf(voices); while(i) voices[--i].allSoundOff();
+      i = NumberOf(channels); while(i) channels[--i].reset(defaultInstrument);
+    }
+    static byte __nextPulseWidth() {
+      union { unsigned int v16; struct {byte low; byte high;} v8; } pw = {0};
+      byte i = NumberOf(voices);
+      while(i) pw.v16 += voices[--i].nextPulseWidth();
+      return pw.v8.high;
+    }
+    static void update() {
+      // must be called from your loop() repeatedly
+      static byte modulation_phase = 0;
+      const byte *addr = maxVolumeSineWavetable + modulation_phase++;
+      const byte modulation_offset = pgm_read_byte(addr) - 0x7F;
+      byte i = NumberOf(voices);
+      while(i) voices[--i].update(modulation_offset);
     }
 };
 
@@ -475,5 +496,7 @@ class PWMDACSynth {
   }; \
   const Instrument * const PWMDACSynth::defaultInstrument PROGMEM = instrument; \
   PWMDACSynth::Voice PWMDACSynth::voices[]; \
-  ISR(PWMDAC_OVF_vect) { PWMDACSynth::__updatePulseWidth(); }
+  ISR(PWMDAC_OVF_vect) { PWMDAC_OCR = PWMDACSynth::__nextPulseWidth(); }
+
+#pragma GCC pop_options
 
