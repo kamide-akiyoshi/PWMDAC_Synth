@@ -6,10 +6,8 @@
 # Datatypes (KEYWORD1)
 #######################################
 
-EnvelopeParam	KEYWORD1
 Instrument	KEYWORD1
 MidiChannel	KEYWORD1
-VoiceStatus	KEYWORD1
 PWMDACSynth	KEYWORD1
 
 #######################################
@@ -24,7 +22,6 @@ pitchBend	KEYWORD2
 controlChange	KEYWORD2
 systemReset	KEYWORD2
 getChannel	KEYWORD2
-setEnvelope	KEYWORD2
 setPriority	KEYWORD2
 
 #######################################
@@ -35,3 +32,4 @@ PWMDAC_NOTE_A_FREQUENCY	LITERAL1
 PWMDAC_POLYPHONY	LITERAL1
 PWMDAC_OUTPUT_PIN	LITERAL1
 PWMDAC_CHANNEL_PRIORITY_SUPPORT	LITERAL1
+

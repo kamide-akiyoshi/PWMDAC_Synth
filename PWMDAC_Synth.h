@@ -1,5 +1,5 @@
 //
-// PWM DAC Synthesizer ver.20200413
+// PWM DAC Synthesizer ver.20200418
 //  by Akiyoshi Kamide (Twitter: @akiyoshi_kamide)
 //  http://kamide.b.osdn.me/pwmdac_synth_lib/
 //  https://osdn.jp/users/kamide/pf/PWMDAC_Synth/
@@ -16,17 +16,7 @@
 #define cbi16(sfr, bit) (_SFR_WORD(sfr) &= ~_BV(bit))
 #define sbi16(sfr, bit) (_SFR_WORD(sfr) |= _BV(bit))
 
-// Function-to-array generator
-#define FX2(f,x)    f(x), f(x + 1)
-#define FX4(f,x)    FX2(f,x), FX2(f,x + 2)
-#define FX8(f,x)    FX4(f,x), FX4(f,x + 4)
-#define FX16(f,x)   FX8(f,x), FX8(f,x + 8)
-#define FX32(f,x)   FX16(f,x),FX16(f,x + 16)
-#define FX64(f,x)   FX32(f,x),FX32(f,x + 32)
-#define FX128(f,x)  FX64(f,x),FX64(f,x + 64)
-#define ARRAY128(f) {FX128(f,0)}
-#define ARRAY256(f) {FX128(f,0),FX128(f,128)}
-
+// Default parameter
 #ifndef PWMDAC_OUTPUT_PIN
 #define PWMDAC_OUTPUT_PIN 3
 #endif
@@ -37,7 +27,8 @@
 #define PWMDAC_POLYPHONY 6
 #endif
 
-// Built-in wavetable generator
+//
+// Built-in wavetable functions
 //  x = Phase angle : 0x00...0x80(PI_radian)...0xFF
 //  f(x) = Wave voltage at the x : 0x00(min)...0x80(center)...0xFF(max)
 #define PWMDAC_SQUARE_WAVE(x)   (((x) < 0x80 ? 0x00 : 0xFF) / PWMDAC_POLYPHONY)
@@ -46,17 +37,26 @@
 #define PWMDAC_MAX_VOLUME_SINE_WAVE(x)  ((byte)( 0x80 * (1 + sin(PI * (x) / 0x80)) ))
 #define PWMDAC_SINE_WAVE(x)     ((byte)( 0x80 * (1 + sin(PI * (x) / 0x80)) / PWMDAC_POLYPHONY ))
 #define PWMDAC_SHEPARD_TONE(x)  ((byte)( 0x80 * (8 \
-    +sin(PI * (x) / 0x80) \
-    +sin(PI * (x) / 0x40) \
-    +sin(PI * (x) / 0x20) \
-    +sin(PI * (x) / 0x10) \
-    +sin(PI * (x) / 0x08) \
-    +sin(PI * (x) / 0x04) \
-    +sin(PI * (x) / 0x02) \
-    +sin(PI * (x) / 0x01) \
-    ) / (8 * PWMDAC_POLYPHONY) ))
+  +sin(PI * (x) / 0x80) \
+  +sin(PI * (x) / 0x40) \
+  +sin(PI * (x) / 0x20) \
+  +sin(PI * (x) / 0x10) \
+  +sin(PI * (x) / 0x08) \
+  +sin(PI * (x) / 0x04) \
+  +sin(PI * (x) / 0x02) \
+  +sin(PI * (x) / 0x01) \
+  ) / (8 * PWMDAC_POLYPHONY) ))
 
-#define PWMDAC_CREATE_WAVETABLE(table, function) PROGMEM const byte table[] = ARRAY256(function)
+#define FX2(f,x)    f(x), f(x + 1)
+#define FX4(f,x)    FX2(f,x), FX2(f,x + 2)
+#define FX8(f,x)    FX4(f,x), FX4(f,x + 4)
+#define FX16(f,x)   FX8(f,x), FX8(f,x + 8)
+#define FX32(f,x)   FX16(f,x), FX16(f,x + 16)
+#define FX64(f,x)   FX32(f,x), FX32(f,x + 32)
+#define FX128(f,x)  FX64(f,x), FX64(f,x + 64)
+#define FX256(f,x)  FX128(f,x), FX128(f,x + 128)
+
+#define PWMDAC_CREATE_WAVETABLE(table, func) PROGMEM const byte table[] = { FX256(func,0) }
 
 // [Phase-correct PWM dual-slope]
 //    TCNTn value changes to:
@@ -277,7 +277,7 @@ class PWMDACSynth {
           wavetable = this->channel->wavetable;
           envelope = this->channel->envelope;
           modulation = &(this->channel->modulation);
-          static PROGMEM const unsigned long phase_speed_table[] = ARRAY128(PHASE_SPEED_OF);
+          static PROGMEM const unsigned long phase_speed_table[] = { FX128(PHASE_SPEED_OF,0) };
           dphase32_original = pgm_read_dword(phase_speed_table + (this->note = note));
           dphase32_bended = this->channel->bendedPitchOf(dphase32_original);
           dphase32_real = dphase32_bended + dphase32_moffset;
